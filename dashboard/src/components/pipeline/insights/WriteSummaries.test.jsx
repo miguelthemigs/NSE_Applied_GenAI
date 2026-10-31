@@ -159,6 +159,21 @@ describe('WriteSummaries', () => {
     expect(screen.getAllByRole('button', { name: CLEAR, hidden: true })).toHaveLength(1)
   })
 
+  it('has one Advanced disclosure, and the model id lives in it', async () => {
+    const OTHER = 'unsloth/gemma-4-E2B-it-qat-GGUF:UD-Q4_K_XL'
+    mockBackend({
+      'GET /api/model-tiers': () => jsonResponse({ tiers: [], advanced: { insights: [OTHER, BALANCED] } }),
+    })
+    renderStep()
+    await runButton()
+    const select = await screen.findByRole('combobox', { name: 'Model', hidden: true })
+    const summaries = screen.getAllByText('Geavanceerd').map((el) => el.closest('summary'))
+    expect(summaries).toHaveLength(1)
+    expect(select.closest('details')).toBe(summaries[0].closest('details'))
+    expect(select).toHaveValue(BALANCED)
+    expect(calls('GET', '/api/model-tiers')).toHaveLength(1)
+  })
+
   it('has exactly one primary run button and none of the old four', async () => {
     mockBackend()
     renderStep()

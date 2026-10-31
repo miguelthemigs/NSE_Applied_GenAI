@@ -21,27 +21,51 @@ import {
   stableFilterKey,
 } from '../utils/filters'
 
+// Every list the filter bar reads. A response that leaves one out (or sends
+// `options: {}`) gets an empty list instead of crashing the page.
+const EMPTY_FILTER_OPTIONS = {
+  academic_years: [],
+  locations: [],
+  programmes: [],
+  study_modes: [],
+  cohorts: [],
+  sectors: [],
+  languages: [],
+}
+
+function withFilterDefaults(options) {
+  const merged = { ...EMPTY_FILTER_OPTIONS }
+  for (const [key, value] of Object.entries(options ?? {})) {
+    merged[key] = Array.isArray(value) ? value : []
+  }
+  return merged
+}
+
+/** The centred card for an empty or unavailable Overview (mockup Overview). */
+function StateCard({ icon, children }) {
+  return (
+    <div className="bg-surface-container-lowest border border-outline-variant rounded-2xl px-6 py-12 md:py-14 flex flex-col items-center text-center gap-3.5">
+      <span className="w-16 h-16 rounded-2xl bg-primary-fixed text-primary flex items-center justify-center">
+        <Icon name={icon} className="text-[32px]" />
+      </span>
+      {children}
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Overview() {
-  const { t } = useI18n()
+  const { t, formatDate } = useI18n()
   const [searchParams, setSearchParams] = useSearchParams()
   const filters = useMemo(() => filtersFromSearchParams(searchParams), [searchParams])
 
   // Fetch filter options on mount
-  const [filterOptions, setFilterOptions] = useState({
-    academic_years: [],
-    locations: [],
-    programmes: [],
-    study_modes: [],
-    cohorts: [],
-    sectors: [],
-    languages: [],
-  });
+  const [filterOptions, setFilterOptions] = useState(EMPTY_FILTER_OPTIONS);
 
   useEffect(() => {
     getJson('/api/filter-options')
       .then(({ data }) => {
-        if (data?.status === 'success') setFilterOptions(data.options);
+        if (data?.status === 'success') setFilterOptions(withFilterDefaults(data.options));
       })
       .catch(e => console.error(e));
   }, []);
@@ -63,7 +87,7 @@ export default function Overview() {
     }
     const params = new URLSearchParams(apiFilters);
     getJson(`/api/filter-options?${params}`)
-      .then(({ data }) => { if (data?.status === 'success') setAvailableFilterOptions(data.options); })
+      .then(({ data }) => { if (data?.status === 'success') setAvailableFilterOptions(withFilterDefaults(data.options)); })
       .catch(() => {});
   }, [filters]);
 
@@ -150,17 +174,27 @@ export default function Overview() {
   const displayThemes = hasNoMatchingResponses ? [] : themes
 
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-6 md:px-8 md:py-8 flex flex-col gap-6">
+    <main className="max-w-[1040px] mx-auto px-4 sm:px-6 pt-8 pb-16 flex flex-col gap-5">
 
-      {/* ── Hero Stats Banner ── */}
-      {overviewKind === 'ok' && <HeroBanner themes={displayThemes} lastUpdated={lastUpdated} />}
+      {/* ── Hero Stats Banner (or a plain header while there is nothing to count) ── */}
+      {overviewKind === 'ok' ? (
+        <HeroBanner themes={displayThemes} lastUpdated={lastUpdated} />
+      ) : (
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex flex-col gap-1.5 max-w-[640px]">
+            <span className="text-xs font-bold tracking-[0.08em] uppercase text-on-surface-variant">{t('overview.eyebrow')}</span>
+            <h1 className="m-0 font-headline font-extrabold text-[26px] sm:text-[32px] leading-tight tracking-tight text-primary">{t('overview.title')}</h1>
+          </div>
+          {formatDate(lastUpdated) && <p className="m-0 text-[13px] text-on-surface-variant">{t('done.updated', { date: formatDate(lastUpdated) })}</p>}
+        </header>
+      )}
 
       {/* ── Filters bar ── */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3, duration: 0.5 }}
-        className="relative z-20 bg-surface-container-lowest/85 glass-panel shadow-editorial rounded-2xl px-5 py-4"
+        className="relative z-20 bg-surface-container-lowest border border-outline-variant rounded-2xl px-5 py-4"
       >
         <div className="flex flex-wrap md:flex-nowrap gap-3 flex-1">
           <div className="flex-1 min-w-[130px]">
@@ -244,29 +278,24 @@ export default function Overview() {
               </h3>
             </div>
           ) : overviewKind === 'no_summaries' ? (
-            <div className="bg-surface-container-lowest rounded-2xl p-8 md:p-14 text-center shadow-ambient border border-outline-variant/10 flex flex-col items-center gap-3">
-              <Icon name="description" className="text-4xl text-primary mb-1 block" />
-              <h3 className="text-2xl font-bold font-headline text-primary">
+            <StateCard icon="description">
+              <h3 className="m-0 font-headline font-extrabold text-2xl text-primary">
                 {t('overview.empty')}
               </h3>
-              <p className="text-sm text-on-surface-variant max-w-[520px]">
+              <p className="m-0 text-on-surface-variant max-w-[520px]">
                 {t('overview.emptyBody')}
               </p>
               <Link
                 to="/pipeline-demo?step=insights"
-                className="mt-2 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"
+                className="mt-1.5 inline-flex items-center gap-2.5 min-h-[48px] rounded-xl bg-primary px-5 py-3 text-[15px] font-semibold text-on-primary no-underline hover:bg-primary-container transition-colors duration-150"
               >
                 {t('overview.emptyAction')}
-                <Icon name="arrow_forward" className="text-base" />
+                <Icon name="arrow_forward" className="text-[18px]" />
               </Link>
-            </div>
+            </StateCard>
           ) : overviewKind === 'not_ready' || overviewKind === 'offline' || overviewKind === 'error' ? (
-            <div className="bg-surface-container-lowest rounded-2xl p-8 text-center shadow-ambient border border-outline-variant/10">
-              <Icon
-                name={overviewKind === 'not_ready' ? 'hourglass_empty' : overviewKind === 'error' ? 'error' : 'cloud_off'}
-                className="text-4xl text-outline mb-3 block"
-              />
-              <p className="text-sm text-on-surface-variant" role="status">
+            <StateCard icon={overviewKind === 'not_ready' ? 'hourglass_empty' : overviewKind === 'error' ? 'error' : 'cloud_off'}>
+              <p className="m-0 font-semibold text-on-surface max-w-[520px]" role="status">
                 {overviewKind === 'not_ready'
                   ? t('overview.notReady')
                   : overviewKind === 'error'
@@ -274,12 +303,12 @@ export default function Overview() {
                     : t('overview.offline')}
               </p>
               {overviewKind === 'error' && overviewDetail && (
-                <details className="mt-3 text-xs text-on-surface-variant">
+                <details className="text-xs text-on-surface-variant">
                   <summary className="cursor-pointer">{t('action.details')}</summary>
                   <p className="mt-1 break-words">{String(overviewDetail)}</p>
                 </details>
               )}
-            </div>
+            </StateCard>
           ) : hasNoMatchingResponses ? (
             <div className="bg-surface-container-lowest rounded-2xl p-8 text-center shadow-ambient border border-outline-variant/10">
               <Icon name="filter_alt_off" className="text-4xl text-outline mb-3 block" />

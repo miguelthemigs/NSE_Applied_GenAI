@@ -6,27 +6,30 @@ const LANGS = [
   { code: 'en', label: 'EN' },
 ]
 
+/** NL / EN segmented control on the navy nav bar (mockup Main: translate icon, then the track). */
 export default function LanguageToggle() {
   const { lang, setLang, t } = useI18n()
   return (
-    <div role="group" aria-label={t('lang.toggle')} className="flex items-center gap-1 rounded-full bg-white/10 p-0.5">
-      <Icon name="translate" className="text-lg text-primary-fixed-dim pl-1.5" />
-      {LANGS.map(({ code, label }) => {
-        const active = lang === code
-        return (
-          <button
-            key={code}
-            type="button"
-            aria-pressed={active}
-            onClick={() => setLang(code)}
-            className={`rounded-full px-2.5 py-1 text-xs font-bold transition-colors ${
-              active ? 'bg-white text-primary' : 'bg-transparent text-primary-fixed-dim hover:text-white'
-            }`}
-          >
-            {label}
-          </button>
-        )
-      })}
+    <div role="group" aria-label={t('lang.toggle')} className="flex items-center gap-2">
+      <Icon name="translate" className="max-sm:hidden text-[18px] text-primary-fixed" />
+      <div className="flex rounded-[10px] bg-primary-container p-[3px]">
+        {LANGS.map(({ code, label }) => {
+          const active = lang === code
+          return (
+            <button
+              key={code}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setLang(code)}
+              className={`min-h-8 rounded-xl px-2.5 sm:px-3 py-1.5 text-[13px] font-semibold leading-none transition-colors duration-150 ${
+                active ? 'bg-surface-container-lowest text-primary' : 'bg-transparent text-primary-fixed hover:text-on-primary'
+              }`}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }

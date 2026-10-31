@@ -1,57 +1,18 @@
 import { useRef, useState } from 'react'
 import { PIPELINE_STEPS } from '../../config/pipelineSteps'
-import { deriveStepView, firstOpenStep, stepPanelId, stepTabId } from '../../utils/stepView'
+import { deriveStepView, stepPanelId, stepTabId } from '../../utils/stepView'
+import { WARNING_STATES, displayState, labelTone, stateLabel } from '../../utils/stepLabel'
 import { useI18n } from '../../i18n/I18nProvider'
 import Icon from '../Icon'
 
-const WARNING_STATES = new Set(['needs_review', 'unverified', 'interrupted', 'stale'])
 const WARNING_ICON = { needs_review: 'warning', unverified: 'warning', interrupted: 'pause', stale: 'update' }
-const STEP_N = Object.fromEntries(PIPELINE_STEPS.map((s) => [s.id, s.n]))
-
-// 'next' is a display-only state: the first open step when it has not started yet.
-function displayState(status, step, view) {
-  if (view.state === 'not_started' && !view.blockedBy && status && firstOpenStep(status) === step.id) return 'next'
-  return view.state
-}
-
-function stateLabel(t, status, step, view, shown) {
-  const optional = step.optional ? ` · ${t('state.optional')}` : ''
-  const summary = status?.steps?.[step.id]?.summary
-  switch (shown) {
-    case 'blocked':
-      return t('state.blocked', { n: STEP_N[view.blockedBy] ?? step.n - 1 }) + optional
-    case 'next':
-      return t('state.next') + optional
-    case 'not_started':
-      return t('state.not_started') + optional
-    case 'in_progress': {
-      const job = status?.active_job
-      const pct = job?.step === step.id ? job.progress : null
-      return typeof pct === 'number' ? t('state.in_progress', { pct: Math.round(pct) }) : t('state.working')
-    }
-    case 'partial':
-      return t('state.partial', { x: summary?.themes_done ?? 0, y: summary?.themes_total ?? 0 })
-    case 'needs_review':
-      return t('state.needs_review', { n: summary?.review ?? 0 })
-    default:
-      return t('state.' + shown)
-  }
-}
-
-function labelTone(shown) {
-  if (shown === 'done') return 'text-success font-semibold'
-  if (WARNING_STATES.has(shown)) return 'text-warning font-semibold'
-  if (shown === 'error') return 'text-error font-semibold'
-  if (['in_progress', 'partial', 'ready', 'next'].includes(shown)) return 'text-primary font-semibold'
-  return 'text-outline'
-}
 
 function StateCircle({ step, shown }) {
   const base = 'w-9 h-9 rounded-full flex items-center justify-center shrink-0 box-border'
   if (shown === 'done') {
     return (
-      <span className={`${base} text-primary`} aria-hidden="true">
-        <Icon name="check_circle" filled className="text-[42px] leading-none" />
+      <span className={`${base} bg-primary text-on-primary`} aria-hidden="true">
+        <Icon name="check" className="text-[20px]" />
       </span>
     )
   }

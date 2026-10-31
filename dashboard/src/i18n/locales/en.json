@@ -362,5 +362,9 @@
   "error.blocked": "This can’t start yet: finish step {n} first ({name}).",
   "action.viewResults": "View results",
   "action.retry": "Try again",
-  "done.review.loadFailed": "The list of possible misses couldn’t be loaded. You can only continue after reviewing the list."
+  "done.review.loadFailed": "The list of possible misses couldn’t be loaded. You can only continue after reviewing the list.",
+  "anon.phase.upload": "Upload",
+  "anon.phase.columns": "Choose columns",
+  "anon.phase.review": "Check results",
+  "anon.phase.label": "Parts of this step"
 }

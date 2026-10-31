@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { DEFAULT_TIER, modelFor } from '../../../config/modelTiers'
 import { usePipelineStatus } from '../../../context/PipelineStatusContext'
 import { useNdjsonStream } from '../../../hooks/useNdjsonStream'
@@ -12,6 +13,10 @@ import DoneCard from '../DoneCard'
 import GateReason from '../GateReason'
 import ProgressPanel from '../ProgressPanel'
 import TierPicker from '../TierPicker'
+import AdvancedModelSelect from '../AdvancedModelSelect'
+import StepHeader from '../StepHeader'
+import useModelTiers from '../useModelTiers'
+import { errorBox, primaryButton, secondaryButton, stepBody, stepFooterEnd } from '../stepStyles'
 import InsightsAdvanced from './InsightsAdvanced'
 import ResultsList from './ResultsList'
 
@@ -22,10 +27,7 @@ const CONFIRM_ABOVE = 500
 const STAGES = ['load', 'read', 'process', 'save']
 const stageIndex = (stage) => STAGES.indexOf(stage === 'download' ? 'load' : stage)
 
-const primaryButton =
-  'inline-flex items-center gap-2.5 min-h-[48px] px-[22px] py-3 rounded-xl bg-primary text-on-primary text-[15px] font-semibold hover:bg-primary-container disabled:bg-surface-container-highest disabled:text-on-surface-variant disabled:cursor-not-allowed'
-const secondaryButton =
-  'inline-flex items-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-primary text-sm font-semibold hover:bg-surface-container-low'
+const runButton = `${primaryButton} min-h-[48px] px-[22px] py-3 gap-2.5 text-[15px]`
 
 /** The backend's estimate ({count, minutes}) from /api/precompute-preview, or null. */
 async function fetchEstimate(dims) {
@@ -55,6 +57,7 @@ export default function WriteSummaries({ onNavigate }) {
   // Settings. An Advanced model id wins over the tier.
   const [tier, setTier] = useState(DEFAULT_TIER)
   const [advancedModel, setAdvancedModel] = useState(null)
+  const tiers = useModelTiers('insights')
   const selectedModel = modelFor('insights', tier, advancedModel)
   const modelName = advancedModel || shortTier(t('tier.' + tier))
   const [combosOn, setCombosOn] = useState(false)
@@ -220,19 +223,13 @@ export default function WriteSummaries({ onNavigate }) {
     ? t('insights.filtered', { count: formatNumber(shownEstimate.count), min: formatNumber(shownEstimate.minutes) })
     : t('insights.filtered.label')
 
-  return (
-    <div className="flex flex-col gap-6">
-      <header className="flex gap-4 items-start pb-5 border-b border-surface-container-highest">
-        <span className="w-11 h-11 rounded-xl bg-primary-fixed text-primary flex items-center justify-center shrink-0">
-          <Icon name="summarize" className="text-[22px]" />
-        </span>
-        <div className="flex flex-col gap-1 min-w-0">
-          <h2 className="m-0 font-headline font-extrabold text-2xl text-primary">{t('step.insights')}</h2>
-          <p className="m-0 text-on-surface-variant">{t('step.insights.lead')}</p>
-        </div>
-      </header>
+  const results = <ResultsList filterDimensions={runDims} reloadKey={resultsKey} />
 
-      {showDone && (
+  return (
+    <>
+      <StepHeader stepId="insights" />
+
+      {showDone ? (
         <DoneCard
           stepId="insights"
           stepView={view}
@@ -241,102 +238,124 @@ export default function WriteSummaries({ onNavigate }) {
           onRunAgain={() => { setSucceeded(false); setRerunning(true) }}
           onContinue={() => onNavigate?.('query')}
         >
-          <ResultsList filterDimensions={runDims} reloadKey={resultsKey} />
+          {results}
         </DoneCard>
-      )}
-
-      {phase === 'failed' && runError && (
-        <div role="alert" className="p-5 rounded-2xl bg-error-container text-on-error-container flex items-start gap-3">
-          <Icon name="error" className="text-2xl shrink-0" />
-          <div className="min-w-0">
-            <p className="m-0 font-bold">{t(runError.key)}</p>
-            {runError.detail && (
-              <details className="mt-1 text-sm">
-                <summary className="cursor-pointer">{t('action.details')}</summary>
-                <p className="mt-1 break-words">{runError.detail}</p>
-              </details>
-            )}
-          </div>
-        </div>
-      )}
-
-      {statusNotice && !showDone && (
-        <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
-      )}
-
-      {/* A successful run that leaves step 4 partial still gets a confirmation. */}
-      {succeeded && showSettings && (
-        <div role="status" className="flex items-start gap-3 p-4 rounded-xl bg-success-container text-on-surface">
-          <Icon name="check_circle" filled className="text-[22px] text-success shrink-0" />
-          <div className="min-w-0">
-            <p className="m-0 font-semibold">{t('state.done')}</p>
-            <p className="m-0 text-sm text-on-surface-variant">{t('ins.done.main')}</p>
-          </div>
-        </div>
-      )}
-
-      {phase !== 'idle' && (
-        <div className="flex flex-col gap-3">
-          <ProgressPanel stage={stage} progress={progress} logs={logs} download={download ?? undefined} />
-          {phase === 'failed' && (
-            <button type="button" onClick={() => { setPhase('idle'); setRunError(null) }} className={`${secondaryButton} self-start`}>
-              <Icon name="arrow_back" className="text-[18px]" />
-              {t('ins.back')}
-            </button>
-          )}
-        </div>
-      )}
-
-      {showSettings && (
+      ) : (
         <>
-          {DONE_CARD_STATES.has(view.state) && (
-            <button type="button" onClick={() => setRerunning(false)} className={`${secondaryButton} self-start`}>
-              <Icon name="arrow_back" className="text-[18px]" />
-              {t('action.viewResults')}
-            </button>
-          )}
+          <div className={`${stepBody} gap-6`}>
+            {phase === 'failed' && runError && (
+              <div role="alert" className={errorBox}>
+                <Icon name="error" className="text-[22px] shrink-0" />
+                <div className="min-w-0">
+                  <p className="m-0 font-bold">{t(runError.key)}</p>
+                  {runError.detail && (
+                    <details className="mt-1 text-sm">
+                      <summary className="cursor-pointer">{t('action.details')}</summary>
+                      <p className="mt-1 break-words">{runError.detail}</p>
+                    </details>
+                  )}
+                </div>
+              </div>
+            )}
 
-          <TierPicker
-            step="insights"
-            value={tier}
-            advancedModelId={advancedModel}
-            onChange={(next) => { setTier(next); setAdvancedModel(null) }}
-            onAdvancedChange={(id) => setAdvancedModel(id)}
-          />
+            {statusNotice && (
+              <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
+            )}
 
-          <label className="flex gap-3 items-start border border-outline-variant rounded-xl px-4 py-3.5 cursor-pointer has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary">
-            <input
-              type="checkbox"
-              checked={combosOn}
-              onChange={(e) => setCombosOn(e.target.checked)}
-              className="w-5 h-5 mt-0.5 m-0 shrink-0 accent-primary"
-            />
-            <span className="font-semibold text-on-surface">{filteredLabel}</span>
-          </label>
+            {/* A successful run that leaves step 4 partial still gets a confirmation. */}
+            {succeeded && showSettings && (
+              <div role="status" className="flex items-start gap-3 p-4 rounded-xl bg-success-container text-on-surface">
+                <Icon name="check_circle" filled className="text-[22px] text-success shrink-0" />
+                <div className="min-w-0">
+                  <p className="m-0 font-semibold">{t('state.done')}</p>
+                  <p className="m-0 text-sm text-on-surface-variant">{t('ins.done.main')}</p>
+                </div>
+              </div>
+            )}
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <button type="button" onClick={run} disabled={!view.canStart} className={primaryButton}>
-              <Icon name="summarize" className="text-[20px]" />
-              {t('insights.run')}
-            </button>
-            <GateReason stepId="insights" onNavigate={onNavigate} />
+            {phase !== 'idle' && (
+              <div className="flex flex-col gap-3">
+                <ProgressPanel stage={stage} progress={progress} logs={logs} download={download ?? undefined} />
+                {phase === 'failed' && (
+                  <button type="button" onClick={() => { setPhase('idle'); setRunError(null) }} className={`${secondaryButton} self-start`}>
+                    <Icon name="arrow_back" className="text-[18px]" />
+                    {t('ins.back')}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {showSettings && (
+              <>
+                {DONE_CARD_STATES.has(view.state) && (
+                  <button type="button" onClick={() => setRerunning(false)} className={`${secondaryButton} self-start`}>
+                    <Icon name="arrow_back" className="text-[18px]" />
+                    {t('action.viewResults')}
+                  </button>
+                )}
+
+                <TierPicker
+                  step="insights"
+                  value={tier}
+                  tiers={tiers}
+                  showAdvanced={false}
+                  advancedModelId={advancedModel}
+                  onChange={(next) => { setTier(next); setAdvancedModel(null) }}
+                  onAdvancedChange={(id) => setAdvancedModel(id)}
+                />
+
+                <label className="flex gap-3 items-start border border-outline-variant rounded-xl px-4 py-3.5 cursor-pointer has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary">
+                  <input
+                    type="checkbox"
+                    checked={combosOn}
+                    onChange={(e) => setCombosOn(e.target.checked)}
+                    className="w-5 h-5 mt-0.5 m-0 shrink-0 accent-primary"
+                  />
+                  <span className="font-semibold text-on-surface">{filteredLabel}</span>
+                </label>
+
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <button type="button" onClick={run} disabled={!view.canStart} className={runButton}>
+                    <Icon name="summarize" className="text-[20px]" />
+                    {t('insights.run')}
+                  </button>
+                  <GateReason stepId="insights" onNavigate={onNavigate} />
+                </div>
+              </>
+            )}
+
+            {results}
           </div>
+
+          <div className={stepFooterEnd}>
+            <Link to="/" className={secondaryButton}>
+              {t('action.openOverview')}
+              <Icon name="arrow_forward" className="text-[18px]" />
+            </Link>
+          </div>
+
+          {showSettings && (
+            <InsightsAdvanced
+              model={(
+                <AdvancedModelSelect
+                  step="insights"
+                  tier={tier}
+                  tiers={tiers}
+                  advancedModelId={advancedModel}
+                  onAdvancedChange={(id) => setAdvancedModel(id)}
+                />
+              )}
+              maxDocuments={maxDocuments}
+              onMaxDocumentsChange={setMaxDocuments}
+              extraDims={extraDims}
+              onExtraDimsChange={setExtraDims}
+              combosOn={combosOn}
+              disabled={Boolean(status?.active_job)}
+              onCleared={() => { refresh(); reloadResults() }}
+            />
+          )}
         </>
       )}
-
-      {!showDone && <ResultsList filterDimensions={runDims} reloadKey={resultsKey} />}
-
-      {showSettings && (
-        <InsightsAdvanced
-          maxDocuments={maxDocuments}
-          onMaxDocumentsChange={setMaxDocuments}
-          extraDims={extraDims}
-          onExtraDimsChange={setExtraDims}
-          combosOn={combosOn}
-          disabled={Boolean(status?.active_job)}
-          onCleared={() => { refresh(); reloadResults() }}
-        />
-      )}
-    </div>
+    </>
   )
 }

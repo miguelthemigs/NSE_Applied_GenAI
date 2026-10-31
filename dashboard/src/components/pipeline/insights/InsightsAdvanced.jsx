@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useI18n } from '../../../i18n/I18nProvider'
 import { postJson } from '../../../services/api'
 import Icon from '../../Icon'
+import { advancedBody, advancedDetails, advancedSummary } from '../stepStyles'
 
 /** Answers per theme: 60, 240 (default) or all (null: the backend reads every answer). */
 const DOC_OPTIONS = [
@@ -16,11 +17,12 @@ const legend = 'p-0 mb-2 font-semibold text-on-surface'
 const option = 'flex items-center gap-2.5 min-h-[44px] cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:text-outline'
 
 /**
- * Step 4 settings behind "Advanced", collapsed by default: answers per theme,
+ * Step 4 settings behind "Advanced", collapsed by default and closing the panel:
+ * the technical model id (`model`, an AdvancedModelSelect), answers per theme,
  * study mode and language as extra dimensions, and clearing the saved summaries
  * (always after a confirmation). onCleared runs after a successful clear.
  */
-export default function InsightsAdvanced({ maxDocuments, onMaxDocumentsChange, extraDims, onExtraDimsChange, combosOn, disabled = false, onCleared }) {
+export default function InsightsAdvanced({ model, maxDocuments, onMaxDocumentsChange, extraDims, onExtraDimsChange, combosOn, disabled = false, onCleared }) {
   const { t } = useI18n()
   const [clearing, setClearing] = useState(false)
   const [notice, setNotice] = useState(null) // null | 'done' | 'failed'
@@ -45,12 +47,13 @@ export default function InsightsAdvanced({ maxDocuments, onMaxDocumentsChange, e
   }
 
   return (
-    <details className="rounded-xl border border-outline-variant bg-surface">
-      <summary className="cursor-pointer min-h-[44px] flex items-center gap-2 px-4 font-semibold text-on-surface-variant">
+    <details className={advancedDetails}>
+      <summary className={advancedSummary}>
         <Icon name="tune" className="text-[18px]" />
         {t('action.advanced')}
       </summary>
-      <div className="px-4 pb-4 pt-1 flex flex-col gap-5 text-sm text-on-surface">
+      <div className={advancedBody}>
+        {model}
         <fieldset className="m-0 p-0 border-0" disabled={disabled}>
           <legend className={legend}>{t('ins.docs.title')}</legend>
           <div className="flex flex-wrap gap-x-5">

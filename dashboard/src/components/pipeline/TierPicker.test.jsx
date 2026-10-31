@@ -89,4 +89,14 @@ describe('TierPicker', () => {
     expect(screen.queryByText(/GB/)).not.toBeInTheDocument()
     expect(screen.queryByText('Al op deze computer')).not.toBeInTheDocument()
   })
+
+  it('showAdvanced={false} leaves out its own Advanced disclosure and uses the given tiers', async () => {
+    const tiers = { rows: CATALOG.tiers, advanced: CATALOG.advanced.insights }
+    setup({ showAdvanced: false, tiers })
+    expect(screen.getByText('6,2 GB')).toBeInTheDocument()
+    expect(screen.queryByText('Geavanceerd')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { hidden: true })).not.toBeInTheDocument()
+    // The caller already looked the tiers up: no second request.
+    expect(fetch).not.toHaveBeenCalled()
+  })
 })

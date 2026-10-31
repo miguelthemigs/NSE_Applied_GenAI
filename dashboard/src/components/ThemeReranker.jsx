@@ -6,6 +6,11 @@ import GateReason from './pipeline/GateReason';
 import ProgressPanel from './pipeline/ProgressPanel';
 import Icon from './Icon';
 import DoneCard from './pipeline/DoneCard';
+import StepHeader from './pipeline/StepHeader';
+import {
+  advancedBody, advancedDetails, advancedSummary, checkbox, errorBox, fieldLabel, linkButton, noteBox,
+  primaryButton, secondaryButton, stepBody, stepFooter, textInput,
+} from './pipeline/stepStyles';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 import { DONE_CARD_STATES } from '../utils/doneMessage';
@@ -122,23 +127,14 @@ export default function ThemeReranker({ onNavigate }) {
     }
   };
 
-  const vectorReady = !view.blockedBy && Boolean(pipeline);
   const showSkip = !['done', 'skipped', 'stale'].includes(view.state);
   const showDone = DONE_CARD_STATES.has(view.state) && !loading && !rerunning;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 p-6 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100">
-      <div className="flex items-center space-x-4 pb-4 border-b border-gray-100">
-        <div className="p-3 bg-gradient-to-tr from-indigo-500 to-sky-500 text-white rounded-xl shadow-lg">
-          <Icon name="forum" className="text-2xl" />
-        </div>
-        <div>
-          <h2 className="text-3xl font-extrabold tracking-tight text-gray-900">{t('step.rerank')}</h2>
-          <p className="text-gray-500 text-sm mt-1">{t('step.rerank.lead')}</p>
-        </div>
-      </div>
+    <>
+      <StepHeader stepId="rerank" />
 
-      {showDone && (
+      {showDone ? (
         <DoneCard
           stepId="rerank"
           stepView={view}
@@ -147,102 +143,48 @@ export default function ThemeReranker({ onNavigate }) {
           onContinue={() => onNavigate?.('insights')}
           onRunAgain={() => { setResult(null); setRerunning(true); }}
         />
-      )}
+      ) : (
+        <>
+          <div className={stepBody}>
+            {statusNotice && (
+              <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
+            )}
 
-      {statusNotice && !showDone && (
-        <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
-      )}
-
-      {result?.error && !loading && !showDone && (
-        <div role="alert" className="p-5 rounded-2xl bg-error-container text-on-error-container">
-          <p className="m-0 font-bold">{t(streamErrorKey(result.code) ?? 'rerank.failed')}</p>
-          <details className="mt-1 text-sm">
-            <summary className="cursor-pointer">{t('action.details')}</summary>
-            <p className="mt-1 break-words">{result.error}</p>
-          </details>
-        </div>
-      )}
-
-      {!loading && !showDone && (
-        <div className="space-y-6">
-          {DONE_CARD_STATES.has(view.state) && (
-            <button
-              type="button"
-              onClick={() => { setResult(null); setRerunning(false); }}
-              className="inline-flex items-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-primary text-sm font-semibold hover:bg-surface-container-low"
-            >
-              <Icon name="arrow_back" className="text-[18px]" />
-              {t('action.viewResults')}
-            </button>
-          )}
-          {vectorReady && (
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('rerank.status')}</p>
-              <p className="text-lg font-black text-slate-900 mt-1">
-                {t(view.state === 'stale' || view.state === 'skipped' || view.state === 'done' ? 'state.' + view.state : 'state.not_started')}
-              </p>
-            </div>
-          )}
-
-          <div className="space-y-4 p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
-            <div className="grid md:grid-cols-2 gap-4">
-              <label className="flex items-start gap-3 p-4 bg-gray-50 border border-gray-100 rounded-xl cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={allowModelDownload}
-                  onChange={(e) => setAllowModelDownload(e.target.checked)}
-                  className="mt-1"
-                />
-                <div>
-                  <p className="text-sm font-bold text-gray-800">{t('vec.download.title')}</p>
-                  <p className="text-xs text-gray-500 mt-1">{t('rerank.download.lead')}</p>
+            {result?.error && !loading && (
+              <div role="alert" className={errorBox}>
+                <Icon name="error" className="text-[22px] shrink-0" />
+                <div className="min-w-0">
+                  <p className="m-0 font-bold">{t(streamErrorKey(result.code) ?? 'rerank.failed')}</p>
+                  <details className="mt-1 text-sm">
+                    <summary className="cursor-pointer">{t('action.details')}</summary>
+                    <p className="mt-1 break-words">{result.error}</p>
+                  </details>
                 </div>
-              </label>
+              </div>
+            )}
 
-              <label className="block p-4 bg-gray-50 border border-gray-100 rounded-xl">
-                <span className="text-sm font-bold text-gray-800">{t('rerank.max.title')}</span>
-                <input
-                  value={maxDocuments}
-                  onChange={(e) => setMaxDocuments(e.target.value.replace(/[^\d]/g, ''))}
-                  placeholder={t('rerank.max.placeholder')}
-                  className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </label>
-            </div>
+            {loading && <ProgressPanel stage={currentStage} progress={progress} logs={logs} download={download ?? undefined} />}
 
-            <details>
-              <summary className="text-sm font-bold text-gray-800 cursor-pointer">{t('action.advanced')}</summary>
-              <label className="block mt-3">
-                <span className="text-sm font-bold text-gray-800">{t('rerank.model')}</span>
-                <input
-                  value={rerankerModel}
-                  onChange={(e) => setRerankerModel(e.target.value)}
-                  className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                {status?.theme_reranker_model && (
-                  <span className="block mt-1 text-xs text-gray-500 break-words">{status.theme_reranker_model}</span>
-                )}
-              </label>
-            </details>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-gray-50 rounded-xl border border-gray-100">
-            <div className="text-sm text-gray-600">
-              {t('rerank.hint')}
-            </div>
-            {showSkip && (
+            {!loading && DONE_CARD_STATES.has(view.state) && (
               <button
                 type="button"
-                onClick={handleSkip}
-                disabled={!view.canStart || skipping}
-                className="min-h-[44px] px-1 py-2.5 text-sm font-semibold text-primary underline underline-offset-[3px] hover:text-primary-container disabled:opacity-50 disabled:no-underline"
+                onClick={() => { setResult(null); setRerunning(false); }}
+                className={`${secondaryButton} self-start`}
               >
-                {t('action.skip')}
+                <Icon name="arrow_back" className="text-[18px]" />
+                {t('action.viewResults')}
               </button>
             )}
-            <GateReason stepId="rerank" onNavigate={onNavigate} className="ml-auto" />
+
+            {!loading && (
+              <div className={noteBox}>
+                <Icon name="info" className="text-[20px] text-primary shrink-0" />
+                <p className="m-0">{t('rerank.hint')}</p>
+              </div>
+            )}
+
             {skipError && (
-              <div role="alert" className="basis-full order-last rounded-xl bg-error-container text-on-error-container px-4 py-3 text-sm">
+              <div role="alert" className="rounded-xl bg-error-container text-on-error-container px-4 py-3 text-sm">
                 <p className="m-0 font-semibold">{t('rerank.skipFailed')}</p>
                 <details className="mt-1">
                   <summary className="cursor-pointer">{t('action.details')}</summary>
@@ -250,19 +192,80 @@ export default function ThemeReranker({ onNavigate }) {
                 </details>
               </div>
             )}
-            <button
-              onClick={handleRerank}
-              disabled={!view.canStart || loading}
-              className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-sky-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 disabled:opacity-50 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300"
-            >
-              {t('rerank.start')}
-            </button>
           </div>
-        </div>
+
+          {!loading && (
+            <div className={stepFooter}>
+              {showSkip ? (
+                <button
+                  type="button"
+                  onClick={handleSkip}
+                  disabled={!view.canStart || skipping}
+                  className={linkButton}
+                >
+                  {t('action.skip')}
+                </button>
+              ) : <span />}
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <GateReason stepId="rerank" onNavigate={onNavigate} />
+                <button
+                  type="button"
+                  onClick={handleRerank}
+                  disabled={!view.canStart || loading}
+                  className={primaryButton}
+                >
+                  <Icon name="fact_check" className="text-[18px]" />
+                  {t('rerank.start')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!loading && (
+            <details className={advancedDetails}>
+              <summary className={advancedSummary}>
+                <Icon name="tune" className="text-[18px]" />
+                {t('action.advanced')}
+              </summary>
+              <div className={advancedBody}>
+                <label className="flex flex-col gap-1.5 max-w-md">
+                  <span className={fieldLabel}>{t('rerank.max.title')}</span>
+                  <input
+                    value={maxDocuments}
+                    inputMode="numeric"
+                    onChange={(e) => setMaxDocuments(e.target.value.replace(/[^\d]/g, ''))}
+                    placeholder={t('rerank.max.placeholder')}
+                    className={textInput}
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 max-w-md">
+                  <span className={fieldLabel}>{t('rerank.model')}</span>
+                  <input
+                    value={rerankerModel}
+                    onChange={(e) => setRerankerModel(e.target.value)}
+                    className={`${textInput} font-mono`}
+                  />
+                  {status?.theme_reranker_model && (
+                    <span className="text-xs text-on-surface-variant break-words">{status.theme_reranker_model}</span>
+                  )}
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allowModelDownload}
+                    onChange={(e) => setAllowModelDownload(e.target.checked)}
+                    className={checkbox}
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="font-semibold text-on-surface">{t('vec.download.title')}</span>
+                    <span className="text-on-surface-variant">{t('rerank.download.lead')}</span>
+                  </span>
+                </label>
+              </div>
+            </details>
+          )}
+        </>
       )}
-
-      {loading && <ProgressPanel stage={currentStage} progress={progress} logs={logs} download={download ?? undefined} />}
-
-    </div>
+    </>
   );
 }

@@ -362,5 +362,9 @@
   "error.blocked": "Dit kan nog niet: rond eerst stap {n} af ({name}).",
   "action.viewResults": "Resultaten bekijken",
   "action.retry": "Opnieuw proberen",
-  "done.review.loadFailed": "De lijst met mogelijke missers kon niet worden geladen. Je kunt pas verder als je de lijst hebt bekeken."
+  "done.review.loadFailed": "De lijst met mogelijke missers kon niet worden geladen. Je kunt pas verder als je de lijst hebt bekeken.",
+  "anon.phase.upload": "Uploaden",
+  "anon.phase.columns": "Kolommen kiezen",
+  "anon.phase.review": "Resultaten controleren",
+  "anon.phase.label": "Onderdelen van deze stap"
 }

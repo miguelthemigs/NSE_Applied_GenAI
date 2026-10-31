@@ -87,3 +87,4 @@ backups/*
 # Playwright e2e
 dashboard/test-results/
 dashboard/playwright-report/
+dashboard/e2e/__screens__/

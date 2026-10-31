@@ -7,16 +7,12 @@ import { postJson } from '../../services/api'
 import { continueHintKey, doneMessage, tierLabel } from '../../utils/doneMessage'
 import { isMet } from '../../utils/stepView'
 import Icon from '../Icon'
+import { primaryButton, secondaryButton, stepBody, stepFooter } from './stepStyles'
 
 const STEP_N = Object.fromEntries(PIPELINE_STEPS.map((s) => [s.id, s.n]))
 const NEXT_STEP = { anonymize: 'vectors', vectors: 'rerank', rerank: 'insights' }
 const BY_TYPE = ['names', 'locations', 'numbers', 'health']
 const WARNING_STATES = new Set(['unverified', 'stale'])
-
-const primaryButton =
-  'inline-flex items-center gap-2 min-h-[44px] px-[18px] py-2.5 rounded-xl bg-primary text-on-primary text-sm font-semibold no-underline hover:bg-primary-container disabled:bg-surface-container-highest disabled:text-on-surface-variant disabled:cursor-not-allowed'
-const secondaryButton =
-  'inline-flex items-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-primary text-sm font-semibold hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed'
 
 function Tile({ label, value }) {
   return (
@@ -145,8 +141,9 @@ function StateIcon({ state }) {
  * becomes the secondary "Ask a question" (step 5).
  * listReady (anonymize only) must be true before the acknowledge box can be
  * ticked; it defaults to false so a caller that forgets it fails closed.
+ * Renders the panel body (with `intro` on top) and the panel's footer bar.
  */
-export default function DoneCard({ stepId, stepView, summary, completedAt, onContinue, onRunAgain, onRunCheck, listReady = false, details, children }) {
+export default function DoneCard({ stepId, stepView, summary, completedAt, onContinue, onRunAgain, onRunCheck, listReady = false, intro, details, children }) {
   const { t, formatNumber, formatDate } = useI18n()
   const hintId = useId()
   const state = stepView?.state
@@ -158,30 +155,33 @@ export default function DoneCard({ stepId, stepView, summary, completedAt, onCon
   const reviewable = stepId === 'anonymize' && summary?.verified !== false && Number(summary?.review) > 0
 
   return (
-    <div className="flex flex-col gap-5">
-      <div data-state={state} className={`flex gap-3.5 items-start rounded-xl p-4 ${warn ? 'bg-warning-container' : 'bg-surface-container-low'}`}>
-        <StateIcon state={state} />
-        <div className="flex flex-col gap-1 min-w-0">
-          {warn && <p className="m-0 font-bold text-warning">{t('state.' + state)}</p>}
-          <p className="m-0 font-semibold text-base text-on-surface">{doneMessage(stepId, summary, t, formatNumber)}</p>
-          {warn && <p className="m-0 text-sm text-on-surface">{t(`done.${state}.lead`)}</p>}
-          {updated && <p className="m-0 text-[13px] text-on-surface-variant">{t('done.updated', { date: updated })}</p>}
-          {state === 'unverified' && onRunCheck && (
-            <button type="button" onClick={onRunCheck} disabled={!stepView?.canStart} className={`${primaryButton} self-start mt-2`}>
-              <Icon name="fact_check" className="text-[18px]" />
-              {t('action.runCheck')}
-            </button>
-          )}
+    <>
+      <div className={stepBody}>
+        {intro}
+        <div data-state={state} className={`flex gap-3.5 items-start rounded-xl p-4 ${warn ? 'bg-warning-container' : 'bg-surface-container-low'}`}>
+          <StateIcon state={state} />
+          <div className="flex flex-col gap-1 min-w-0">
+            {warn && <p className="m-0 font-bold text-warning">{t('state.' + state)}</p>}
+            <p className="m-0 font-semibold text-base text-on-surface">{doneMessage(stepId, summary, t, formatNumber)}</p>
+            {warn && <p className="m-0 text-sm text-on-surface">{t(`done.${state}.lead`)}</p>}
+            {updated && <p className="m-0 text-[13px] text-on-surface-variant">{t('done.updated', { date: updated })}</p>}
+            {state === 'unverified' && onRunCheck && (
+              <button type="button" onClick={onRunCheck} disabled={!stepView?.canStart} className={`${primaryButton} self-start mt-2`}>
+                <Icon name="fact_check" className="text-[18px]" />
+                {t('action.runCheck')}
+              </button>
+            )}
+          </div>
         </div>
+
+        <Tiles stepId={stepId} summary={summary} completedAt={completedAt} />
+
+        {reviewable ? <ReviewGate summary={summary} listReady={listReady}>{children}</ReviewGate> : children}
+
+        {details}
       </div>
 
-      <Tiles stepId={stepId} summary={summary} completedAt={completedAt} />
-
-      {reviewable ? <ReviewGate summary={summary} listReady={listReady}>{children}</ReviewGate> : children}
-
-      {details}
-
-      <div className="flex flex-wrap gap-3 items-center justify-between pt-4 border-t border-surface-container-highest">
+      <div className={stepFooter}>
         {onRunAgain ? (
           <button type="button" onClick={onRunAgain} className={secondaryButton}>
             <Icon name="refresh" className="text-[18px]" />
@@ -202,14 +202,14 @@ export default function DoneCard({ stepId, stepView, summary, completedAt, onCon
             </Link>
           </div>
         ) : next ? (
-          <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3 max-sm:w-full">
             {gated && hintKey && <span id={hintId} className="text-[13px] text-on-surface-variant">{t(hintKey)}</span>}
             <button
               type="button"
               onClick={onContinue}
               disabled={gated}
               aria-describedby={gated && hintKey ? hintId : undefined}
-              className={primaryButton}
+              className={`${primaryButton} max-sm:w-full`}
             >
               {t('action.continue', { n: STEP_N[next] })}
               <Icon name="arrow_forward" className="text-[18px]" />
@@ -217,6 +217,6 @@ export default function DoneCard({ stepId, stepView, summary, completedAt, onCon
           </div>
         ) : null}
       </div>
-    </div>
+    </>
   )
 }

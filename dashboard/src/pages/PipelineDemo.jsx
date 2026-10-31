@@ -85,7 +85,7 @@ function PipelineSteps() {
               id={stepPanelId(step.id)}
               aria-labelledby={stepTabId(step.id)}
               hidden={step.id !== current}
-              className="bg-surface-container-lowest border border-outline-variant rounded-2xl p-3 sm:p-6 min-w-0"
+              className="bg-surface-container-lowest border border-outline-variant rounded-2xl overflow-hidden min-w-0"
             >
               {visited.has(step.id) && <Panel onNavigate={selectStep} />}
             </section>
