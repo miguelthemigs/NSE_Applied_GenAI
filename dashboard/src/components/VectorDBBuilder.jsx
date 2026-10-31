@@ -3,6 +3,9 @@ import { useNdjsonStream } from '../hooks/useNdjsonStream';
 import { apiUrl } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import Icon from './Icon';
+import GateReason from './pipeline/GateReason';
+import { usePipelineStatus } from '../context/PipelineStatusContext';
+import { deriveStepView } from '../utils/stepView';
 
 const AVAILABLE_MODELS = [
   {
@@ -25,9 +28,12 @@ const AVAILABLE_MODELS = [
   }
 ];
 
-export default function VectorDBBuilder({ onSuccess }) {
+export default function VectorDBBuilder({ onNavigate }) {
   const { t, formatNumber } = useI18n();
   const stream = useNdjsonStream();
+  const { status, refresh } = usePipelineStatus();
+  const view = deriveStepView(status, 'vectors');
+  const anonymizedAt = status?.steps?.anonymize?.completed_at;
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -45,7 +51,7 @@ export default function VectorDBBuilder({ onSuccess }) {
   const [configError, setConfigError] = useState(null);
   const [vectorCheckpoint, setVectorCheckpoint] = useState(null);
 
-  // Load columns and checkpoint status on mount
+  // Load columns and checkpoint status on mount, and again when step 1 produced a new file
   useEffect(() => {
     const fetchColumns = async () => {
       try {
@@ -56,6 +62,7 @@ export default function VectorDBBuilder({ onSuccess }) {
           setSelectedColumns(data.text_columns || []);
           setRowCount(data.row_count || 0);
           setConfigLoaded(true);
+          setConfigError(null);
         } else {
           setConfigError('columns');
         }
@@ -72,7 +79,7 @@ export default function VectorDBBuilder({ onSuccess }) {
     };
     fetchColumns();
     fetchCheckpoint();
-  }, []);
+  }, [anonymizedAt]);
 
   const toggleColumn = (col) => {
     setSelectedColumns(prev =>
@@ -95,6 +102,7 @@ export default function VectorDBBuilder({ onSuccess }) {
     setResult(null);
     setVectorCheckpoint(null);
 
+    let sawEvent = false;
     try {
       await stream.start('/api/build-vectors', {
         embedding_model: model,
@@ -102,6 +110,10 @@ export default function VectorDBBuilder({ onSuccess }) {
         allow_model_download: allowModelDownload
       }, {
         onEvent: (data) => {
+          if (!sawEvent) {
+            sawEvent = true;
+            refresh();
+          }
           if (data.status === 'progress') {
             if (data.progress !== undefined) setProgress(data.progress);
             if (data.stage) setCurrentStage(data.stage);
@@ -111,7 +123,6 @@ export default function VectorDBBuilder({ onSuccess }) {
             setResult(data);
             setProgress(100);
             setCurrentStage('save');
-            setTimeout(() => onSuccess?.(), 2000);
           } else if (data.status === 'error') {
             setResult({ error: data.error });
             if (data.error) setLogs(prev => [...prev, data.error]);
@@ -123,6 +134,7 @@ export default function VectorDBBuilder({ onSuccess }) {
       setLogs(prev => [...prev, error.message]);
     } finally {
       setLoading(false);
+      refresh();
     }
   };
 
@@ -167,7 +179,8 @@ export default function VectorDBBuilder({ onSuccess }) {
                   </button>
                   <button
                     onClick={() => handleBuild(vectorCheckpoint.embedding_model, vectorCheckpoint.selected_columns)}
-                    className="px-5 py-2 bg-amber-500 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-amber-600 transition-all"
+                    disabled={!view.canStart}
+                    className="px-5 py-2 bg-amber-500 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-amber-600 transition-all disabled:opacity-50"
                   >
                     {t('anon.resume')}
                   </button>
@@ -265,13 +278,14 @@ export default function VectorDBBuilder({ onSuccess }) {
           </details>
 
           {/* Summary and start button */}
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-gray-50 rounded-xl border border-gray-100">
             <div className="text-sm text-gray-600">
               {t('vec.summary', { r: formatNumber(rowCount), model: activeModel?.name || selectedModel })}
             </div>
+            <GateReason view={view} onNavigate={onNavigate} className="ml-auto" />
             <button
               onClick={() => handleBuild()}
-              disabled={loading || selectedColumns.length === 0}
+              disabled={loading || selectedColumns.length === 0 || !view.canStart}
               className="px-8 py-3 bg-gradient-to-r from-fuchsia-600 to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-fuchsia-200 disabled:opacity-50 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300"
             >
               {t('step.vectors')}
@@ -385,6 +399,14 @@ export default function VectorDBBuilder({ onSuccess }) {
                       <p className="text-lg font-black text-emerald-700 mt-1">{activeModel?.name || selectedModel}</p>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate?.('rerank')}
+                    className="mt-6 inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold hover:bg-primary-container"
+                  >
+                    {t('action.continue', { n: 3 })}
+                    <Icon name="arrow_forward" className="text-[18px]" />
+                  </button>
                 </>
               )}
             </div>

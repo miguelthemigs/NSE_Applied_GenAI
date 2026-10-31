@@ -367,5 +367,9 @@
   "detail.backDashboard": "Back to the overview",
   "detail.backTheme": "Back to the theme",
   "detail.queryFailed": "The summary couldn't be loaded.",
-  "ins.filtered.hint": "Leave all filters unticked to only save the overall summaries."
+  "ins.filtered.hint": "Leave all filters unticked to only save the overall summaries.",
+  "stepper.label": "Steps",
+  "stepper.position": "Step {n} of {total}",
+  "state.optional": "optional",
+  "pipeline.statusError": "Couldn't load the progress of the steps."
 }

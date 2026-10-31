@@ -1,5 +1,6 @@
 import { test, expect, noHorizontalScroll, offline } from './fixtures/api.js'
 import { BANNED } from '../scripts/banned-copy.mjs'
+import { statusFixture } from './fixtures/stepper.js'
 
 test.describe('language toggle', () => {
   test('defaults to Dutch, switches to English and survives a reload', async ({ page, mockApi }) => {
@@ -59,6 +60,7 @@ const FILTER_OPTIONS = {
 }
 
 const PIPELINE_ROUTES = {
+  '/api/pipeline/status': statusFixture('fresh'),
   '/api/status': { status: 'success', anonymized_exists: false, vector_db_exists: false },
   '/api/checkpoint-status': { has_checkpoint: false },
   '/api/anonymize-report': { has_report: false },
@@ -126,7 +128,7 @@ test.describe('overview and pipeline copy', () => {
   test('pipeline: no banned copy or emoji in NL and EN', async ({ page, mockApi }) => {
     await mockApi(PIPELINE_ROUTES)
     await page.goto('/pipeline-demo')
-    await expect(page.getByRole('navigation', { name: 'Tabs' })).toBeVisible()
+    await expect(page.getByRole('tabpanel').getByRole('heading', { name: 'Persoonsgegevens verwijderen' })).toBeVisible()
     await expectCleanCopy(page)
     await switchTo(page, 'en')
     await expectCleanCopy(page)
@@ -145,24 +147,25 @@ const STEP_ROUTES = {
 }
 
 const STEP_TABS = [
-  ['1', 'Persoonsgegevens verwijderen', 'Remove personal details'],
-  ['2', 'Antwoorden doorzoekbaar maken', 'Prepare answers for search'],
-  ['3', "Thema's controleren", 'Double-check themes'],
-  ['4', 'Samenvattingen schrijven', 'Write summaries'],
-  ['5', 'Stel een vraag', 'Ask a question'],
+  ['anonymize', 'Persoonsgegevens verwijderen', 'Remove personal details'],
+  ['vectors', 'Antwoorden doorzoekbaar maken', 'Prepare answers for search'],
+  ['rerank', "Thema's controleren", 'Double-check themes'],
+  ['insights', 'Samenvattingen schrijven', 'Write summaries'],
+  ['query', 'Stel een vraag', 'Ask a question'],
 ]
 
 test.describe('render coverage', () => {
-  // Task 9 adds ?step=; until then the tab is clicked.
   test('every pipeline step is clean in NL and EN', async ({ page, mockApi }) => {
-    await mockApi({ ...STEP_ROUTES, '/api/status': { status: 'success', anonymized_exists: true, vector_db_exists: true, vector_db_ready: true, theme_reranker_status: 'ready' } })
-    await page.goto('/pipeline-demo')
+    await mockApi({
+      ...STEP_ROUTES,
+      '/api/pipeline/status': statusFixture('all-done'),
+      '/api/status': { status: 'success', anonymized_exists: true, vector_db_exists: true, vector_db_ready: true, theme_reranker_status: 'ready' },
+    })
     for (const lang of ['nl', 'en']) {
-      if (lang === 'en') await switchTo(page, 'en')
-      for (const [n, nl, en] of STEP_TABS) {
-        const tab = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: `${n}. ${lang === 'nl' ? nl : en}` })
-        await tab.click()
-        await expect(tab).toHaveClass(/border-blue-600/)
+      for (const [id, nl, en] of STEP_TABS) {
+        await page.goto(`/pipeline-demo?step=${id}`)
+        if (lang === 'en') await switchTo(page, 'en')
+        await expect(page.getByRole('tabpanel').getByRole('heading', { name: lang === 'nl' ? nl : en, exact: true })).toBeVisible()
         await expectCleanCopy(page)
       }
     }

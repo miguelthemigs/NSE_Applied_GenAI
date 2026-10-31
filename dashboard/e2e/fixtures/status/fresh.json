@@ -1,0 +1,37 @@
+{
+  "status": "success",
+  "last_updated": null,
+  "active_job": null,
+  "steps": {
+    "anonymize": {
+      "state": "not_started",
+      "completed_at": null,
+      "summary": null
+    },
+    "vectors": {
+      "state": "blocked",
+      "completed_at": null,
+      "summary": null,
+      "checkpoint": null
+    },
+    "rerank": {
+      "state": "blocked",
+      "completed_at": null,
+      "summary": null
+    },
+    "insights": {
+      "state": "blocked",
+      "completed_at": null,
+      "summary": {
+        "themes_done": 0,
+        "themes_total": 7,
+        "subthemes_done": 0,
+        "filtered_done": 0,
+        "filtered_total": 0
+      }
+    },
+    "query": {
+      "state": "blocked"
+    }
+  }
+}

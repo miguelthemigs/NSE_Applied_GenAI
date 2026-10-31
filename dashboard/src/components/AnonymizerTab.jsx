@@ -3,10 +3,18 @@ import { useNdjsonStream } from '../hooks/useNdjsonStream';
 import { apiUrl } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import Icon from './Icon';
+import { usePipelineStatus } from '../context/PipelineStatusContext';
+import { deriveStepView } from '../utils/stepView';
 
-export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymized }) {
+// Step 1 states in which an anonymised file exists on disk.
+const HAS_OUTPUT = new Set(['done', 'needs_review', 'unverified', 'stale']);
+
+export default function AnonymizerTab({ onNavigate }) {
   const { t, formatNumber, formatDate } = useI18n();
   const stream = useNdjsonStream();
+  const { status, refresh } = usePipelineStatus();
+  const view = deriveStepView(status, 'anonymize');
+  const existingAnonymized = HAS_OUTPUT.has(status?.steps?.anonymize?.state);
   const [file, setFile] = useState(null);
   const [columns, setColumns] = useState([]);
   const [selectedColumns, setSelectedColumns] = useState([]);
@@ -98,9 +106,14 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
     setResult(null);
     setProgress(0);
     setStatusMessage(t('anon.check.starting'));
+    let sawEvent = false;
     try {
       await stream.start('/api/run-anonymize-check', undefined, {
         onEvent: (data) => {
+          if (!sawEvent) {
+            sawEvent = true;
+            refresh();
+          }
           if (data.status === 'progress') {
             if (data.progress !== undefined) setProgress(data.progress);
             if (data.message) setStatusMessage(data.message);
@@ -126,6 +139,7 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
     } finally {
       setLoading(false);
       setShowStats(true);
+      refresh();
     }
   };
 
@@ -231,6 +245,7 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
     setCurrentPreview('');
     setCheckpoint(null);
 
+    let sawEvent = false;
     try {
       await stream.start('/api/anonymize', {
         selected_columns: cols,
@@ -238,6 +253,10 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
         run_verification: verify
       }, {
         onEvent: (data) => {
+          if (!sawEvent) {
+            sawEvent = true;
+            refresh();
+          }
           if (data.status === 'progress') {
             if (data.progress !== undefined) setProgress(data.progress);
             if (data.message) setStatusMessage(data.message);
@@ -247,9 +266,6 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
             setResult(data);
             setProgress(100);
             setStatusMessage(t('state.done'));
-            setTimeout(() => {
-              if (typeof onComplete === 'function') onComplete();
-            }, 1500);
           } else if (data.status === 'error') {
             setResult({ error: data.error });
           }
@@ -260,6 +276,7 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
       setProgress(0);
     } finally {
       setLoading(false);
+      refresh();
     }
   };
 
@@ -321,7 +338,8 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
                     </button>
                     <button
                       onClick={() => handleAnonymize(checkpoint.total_columns, checkpoint.selected_layers, runVerification)}
-                      className="px-5 py-2 bg-amber-500 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-amber-600 transition-all"
+                      disabled={!view.canStart}
+                      className="px-5 py-2 bg-amber-500 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-amber-600 transition-all disabled:opacity-50"
                     >
                       {t('anon.resume')}
                     </button>
@@ -383,7 +401,7 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={runCheck}
-                      disabled={loading}
+                      disabled={loading || !view.canStart}
                       className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-indigo-700 transition-all disabled:opacity-50"
                     >
                       {loading ? t('anon.check.running') : t('anon.check.run')}
@@ -615,7 +633,7 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
 
               <button
                 onClick={() => handleAnonymize()}
-                disabled={loading || selectedColumns.length === 0 || selectedLayers.length === 0}
+                disabled={loading || selectedColumns.length === 0 || selectedLayers.length === 0 || !view.canStart}
                 className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 disabled:opacity-50 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center"
               >
                 {loading ? (

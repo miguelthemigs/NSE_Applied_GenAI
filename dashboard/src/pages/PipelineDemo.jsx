@@ -1,116 +1,93 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import AnonymizerTab from '../components/AnonymizerTab';
-import VectorDBBuilder from '../components/VectorDBBuilder'; 
+import VectorDBBuilder from '../components/VectorDBBuilder';
 import ThemeReranker from '../components/ThemeReranker';
 import InsightGenerator from '../components/InsightGenerator';
 import QueryTab from '../components/QueryTab';
-import { apiUrl } from '../services/api';
-import { useI18n } from '../i18n/I18nProvider';
+import Stepper from '../components/pipeline/Stepper';
 import Icon from '../components/Icon';
+import { useI18n } from '../i18n/I18nProvider';
 import { PIPELINE_STEPS } from '../config/pipelineSteps';
+import { PipelineStatusProvider, usePipelineStatus } from '../context/PipelineStatusContext';
+import { firstOpenStep, stepPanelId, stepTabId } from '../utils/stepView';
 
-export default function PipelineDemo() {
+const STEP_IDS = new Set(PIPELINE_STEPS.map((s) => s.id));
+const PANELS = {
+  anonymize: AnonymizerTab,
+  vectors: VectorDBBuilder,
+  rerank: ThemeReranker,
+  insights: InsightGenerator,
+  query: QueryTab,
+};
+
+function PipelineSteps() {
   const { t } = useI18n();
-  const [activeTab, setActiveTab] = useState('anonymize');
-  const [isAnonymized, setIsAnonymized] = useState(false);
-  const [, setVectorDbReady] = useState(false);
-  const [isProcessing] = useState(false);
+  const { status, loading, error } = usePipelineStatus();
+  const [params, setParams] = useSearchParams();
+  const urlStep = STEP_IDS.has(params.get('step')) ? params.get('step') : null;
+  // Without ?step= the first open step is chosen once and written to the URL,
+  // so a later status change never moves the user to another step on its own.
+  const current = urlStep ?? (loading ? null : firstOpenStep(status));
 
-  // Check backend for existing anonymized CSV / vector DB and enable steps if present
+  const selectStep = useCallback((id) => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('step', id);
+      return next;
+    }, { replace: true });
+  }, [setParams]);
+
   useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const res = await fetch(apiUrl('/api/status'));
-        const data = await res.json();
-        if (data.status === 'success') {
-          setIsAnonymized(Boolean(data.anonymized_exists));
-          setVectorDbReady(Boolean(data.vector_db_exists));
-        }
-      } catch (e) {
-        console.warn('Failed to fetch status:', e);
-      }
-    };
-    checkStatus();
-  }, []);
+    if (!urlStep && current) selectStep(current);
+  }, [urlStep, current, selectStep]);
+
+  // A panel mounts the first time it is opened and then stays mounted (hidden
+  // when not selected), so a running stream survives a tab switch.
+  const [visited, setVisited] = useState(() => new Set());
+  if (current && !visited.has(current)) setVisited(new Set(visited).add(current));
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-5xl mx-auto space-y-8">
-        
-        {/* Header */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">{t('page.title')}</h1>
-          <p className="mt-2 text-sm text-gray-500">
-            {t('page.lead')}
-          </p>
-          {isProcessing && (
-            <div className="mt-4 p-3 bg-blue-50 border border-blue-300 rounded-lg flex items-center">
-              <Icon name="progress_activity" className="animate-spin mr-3 text-xl" />
-              <span className="text-blue-700 font-medium">{t('state.working')}</span>
-            </div>
-          )}
-        </div>
+    <div className="min-h-screen bg-surface text-on-surface">
+      <main className="max-w-[1040px] mx-auto px-4 sm:px-6 pt-8 pb-16 flex flex-col gap-5">
+        <header className="flex flex-col gap-1.5 max-w-[640px]">
+          <h1 className="m-0 font-headline font-extrabold text-[26px] sm:text-[32px] leading-tight tracking-tight text-primary">{t('page.title')}</h1>
+          <p className="m-0 text-on-surface-variant">{t('page.lead')}</p>
+        </header>
 
-        {/* Navigation Tabs */}
-        <nav className="flex space-x-4 border-b border-gray-200 pb-px overflow-x-auto" aria-label="Tabs">
-          {PIPELINE_STEPS.map((step) => (
-            <button
+        {error && (
+          <div role="status" className="flex items-center gap-3 rounded-xl bg-error-container text-on-error-container px-4 py-3">
+            <Icon name="cloud_off" className="text-[20px] shrink-0" />
+            <span className="font-medium">{error === 'offline' ? t('overview.offline') : t('pipeline.statusError')}</span>
+          </div>
+        )}
+
+        <Stepper status={status} current={current} onSelect={selectStep} />
+
+        {PIPELINE_STEPS.map((step) => {
+          const Panel = PANELS[step.id];
+          return (
+            <section
               key={step.id}
-              onClick={() => setActiveTab(step.id)}
-              disabled={isProcessing}
-              className={`
-                flex items-center shrink-0 px-4 sm:px-6 py-3 text-sm font-medium rounded-t-lg transition-colors
-                ${activeTab === step.id 
-                  ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' 
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}
-                ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-              `}
+              role="tabpanel"
+              id={stepPanelId(step.id)}
+              aria-labelledby={stepTabId(step.id)}
+              hidden={step.id !== current}
+              className="bg-surface-container-lowest border border-outline-variant rounded-2xl p-3 sm:p-6 min-w-0"
             >
-              <Icon name={step.icon} className="mr-2 text-lg" />
-              {step.n}. {t('step.' + step.id)}
-            </button>
-          ))}
-        </nav>
-
-        {/* Content Area */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 sm:p-8 min-h-[500px]">
-          {activeTab === 'anonymize' && (
-            <AnonymizerTab
-              existingAnonymized={isAnonymized}
-              onNavigate={setActiveTab}
-              onComplete={() => {
-                setIsAnonymized(true);
-              }}
-            />
-          )}
-          
-          {activeTab === 'vectors' && (
-            <VectorDBBuilder 
-              onSuccess={() => {
-                setVectorDbReady(true);
-                setActiveTab('rerank');
-              }} 
-            />
-          )}
-
-          {activeTab === 'rerank' && (
-            <ThemeReranker
-              onSuccess={() => {
-                setActiveTab('insights');
-              }}
-            />
-          )}
-          
-          {activeTab === 'insights' && (
-             <InsightGenerator onComplete={() => setActiveTab('query')} />
-          )}
-          
-          {activeTab === 'query' && (
-            <QueryTab />
-          )}
-        </div>
-
-      </div>
+              {visited.has(step.id) && <Panel onNavigate={selectStep} />}
+            </section>
+          );
+        })}
+      </main>
     </div>
+  );
+}
+
+export default function PipelineDemo() {
+  return (
+    <PipelineStatusProvider>
+      <PipelineSteps />
+    </PipelineStatusProvider>
   );
 }

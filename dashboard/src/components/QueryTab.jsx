@@ -2,9 +2,17 @@ import { useState, useEffect } from 'react';
 import { apiUrl } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import Icon from './Icon';
+import GateReason from './pipeline/GateReason';
+import { usePipelineStatus } from '../context/PipelineStatusContext';
+import { deriveStepView } from '../utils/stepView';
 
-export default function QueryTab() {
+export default function QueryTab({ onNavigate }) {
   const { t, formatNumber } = useI18n();
+  const { status } = usePipelineStatus();
+  // Searching starts no job, so only the missing vector DB blocks it.
+  const view = deriveStepView(status, 'query');
+  const blocked = !status || Boolean(view.blockedBy);
+  const vectorsAt = status?.steps?.vectors?.completed_at;
   const [query, setQuery] = useState('');
   const [institution, setInstitution] = useState('all');
   const [year, setYear] = useState('all');
@@ -28,7 +36,7 @@ export default function QueryTab() {
   });
   const [optionsLoading, setOptionsLoading] = useState(true);
 
-  // Fetch filter options on mount
+  // Fetch filter options on mount, and again after a new vector DB was built
   useEffect(() => {
     const fetchFilterOptions = async () => {
       try {
@@ -46,7 +54,7 @@ export default function QueryTab() {
     };
     
     fetchFilterOptions();
-  }, []);
+  }, [vectorsAt]);
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -220,10 +228,12 @@ export default function QueryTab() {
             </div>
           </div>
 
+          <GateReason view={view} onNavigate={onNavigate} className="block" />
+
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={loading || optionsLoading}
+            disabled={loading || optionsLoading || blocked}
             className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg transition flex items-center justify-center gap-2"
           >
             {loading ? (

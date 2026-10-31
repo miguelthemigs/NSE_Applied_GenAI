@@ -37,6 +37,10 @@ export default {
         'surface-container-lowest': '#ffffff',
         'on-secondary': '#ffffff',
         'on-primary': '#ffffff',
+        success: '#1e7a3a',
+        'success-container': '#e6f4ea',
+        warning: '#8a5300',
+        'warning-container': '#fff1d6',
       },
       fontFamily: {
         headline: ['Manrope', 'sans-serif'],

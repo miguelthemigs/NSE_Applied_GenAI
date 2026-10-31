@@ -4,6 +4,9 @@ import { useNdjsonStream } from '../hooks/useNdjsonStream';
 import { apiUrl } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import Icon from './Icon';
+import GateReason from './pipeline/GateReason';
+import { usePipelineStatus } from '../context/PipelineStatusContext';
+import { deriveStepView } from '../utils/stepView';
 
 function CacheBadge({ cached, total }) {
   const { t } = useI18n();
@@ -24,9 +27,12 @@ function CacheBadge({ cached, total }) {
   );
 }
 
-export default function InsightGenerator({ onComplete }) {
+export default function InsightGenerator({ onNavigate }) {
   const { t } = useI18n();
   const stream = useNdjsonStream();
+  const { status, refresh } = usePipelineStatus();
+  const view = deriveStepView(status, 'insights');
+  const vectorsAt = status?.steps?.vectors?.completed_at;
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -97,7 +103,7 @@ export default function InsightGenerator({ onComplete }) {
       .then(r => r.json())
       .then(data => { if (data.total_documents > 0) setTotalDocs(data.total_documents) })
       .catch(() => {})
-  }, []);
+  }, [vectorsAt]);
 
   useEffect(() => {
     fetch(apiUrl('/api/filter-options'))
@@ -113,7 +119,7 @@ export default function InsightGenerator({ onComplete }) {
         });
       })
       .catch(() => {});
-  }, []);
+  }, [vectorsAt]);
 
   const toggleDimension = (key) => {
     setFilterDimensions(prev =>
@@ -229,8 +235,13 @@ export default function InsightGenerator({ onComplete }) {
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       let completed = false;
+      let sawEvent = false;
 
       const handleStreamEvent = (data) => {
+        if (!sawEvent) {
+          sawEvent = true;
+          refresh();
+        }
         if (data.status === 'progress') {
           setProgress(data.progress);
           if (data.stage) setCurrentStage(data.stage);
@@ -242,7 +253,6 @@ export default function InsightGenerator({ onComplete }) {
           setCompletedRun({ endpoint, label });
           if (data.message) setLogs(prev => [...prev, { kind: 'ok', text: data.message }]);
           setGenerating(false);
-          setTimeout(onComplete, 1500);
         } else if (data.status === 'error') {
           completed = true;
           setLogs(prev => [...prev, { kind: 'error', text: t('ins.log.error', { reason: data.message || data.error || '' }) }]);
@@ -258,6 +268,8 @@ export default function InsightGenerator({ onComplete }) {
           break;
         }
         setLogs(prev => [...prev, { kind: 'warn', text: t('ins.log.connection', { reason: e.message }) }]);
+      } finally {
+        refresh();
       }
 
       if (completed || !mountedRef.current) break;
@@ -481,10 +493,12 @@ export default function InsightGenerator({ onComplete }) {
               )}
             </div>
 
+            <GateReason view={view} onNavigate={onNavigate} className="block mb-3" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <button
                 onClick={() => launchPrecompute({ endpoint: '/api/precompute-insights', useFilterGrid: false, label: 'ins.label.main' })}
-                className="px-5 py-3 bg-gradient-to-r from-violet-600 to-blue-600 text-white rounded-xl font-bold shadow hover:shadow-lg hover:-translate-y-0.5 transition-all text-sm text-left"
+                disabled={!view.canStart}
+                className="px-5 py-3 bg-gradient-to-r from-violet-600 to-blue-600 text-white rounded-xl font-bold shadow hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed text-sm text-left"
               >
                 <div className="flex items-center justify-between">
                   <span>{t('ins.btn.main')}</span>
@@ -498,7 +512,8 @@ export default function InsightGenerator({ onComplete }) {
 
               <button
                 onClick={() => launchPrecompute({ endpoint: '/api/precompute-subthemes', useFilterGrid: false, label: 'ins.label.sub' })}
-                className="px-5 py-3 bg-gradient-to-r from-teal-600 to-cyan-600 text-white rounded-xl font-bold shadow hover:shadow-lg hover:-translate-y-0.5 transition-all text-sm text-left"
+                disabled={!view.canStart}
+                className="px-5 py-3 bg-gradient-to-r from-teal-600 to-cyan-600 text-white rounded-xl font-bold shadow hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed text-sm text-left"
               >
                 <div className="flex items-center justify-between">
                   <span>{t('ins.btn.sub')}</span>
@@ -512,7 +527,7 @@ export default function InsightGenerator({ onComplete }) {
 
               <button
                 onClick={() => launchPrecompute({ endpoint: '/api/precompute-insights', useFilterGrid: true, label: 'ins.label.filtered' })}
-                disabled={filterDimensions.length === 0}
+                disabled={filterDimensions.length === 0 || !view.canStart}
                 className="px-5 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl font-bold shadow hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed text-sm text-left"
               >
                 <div className="flex items-center justify-between">
@@ -529,7 +544,7 @@ export default function InsightGenerator({ onComplete }) {
 
               <button
                 onClick={() => launchPrecompute({ endpoint: '/api/precompute-subthemes', useFilterGrid: true, label: 'ins.label.filteredSub' })}
-                disabled={filterDimensions.length === 0}
+                disabled={filterDimensions.length === 0 || !view.canStart}
                 className="px-5 py-3 bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white rounded-xl font-bold shadow hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed text-sm text-left"
               >
                 <div className="flex items-center justify-between">
@@ -635,6 +650,14 @@ export default function InsightGenerator({ onComplete }) {
                   : t('ins.done.main')}
               </p>
               <p className="text-xs text-emerald-600 mt-2">{t('ins.model.used', { name: activeModel?.name })}</p>
+              <button
+                type="button"
+                onClick={() => onNavigate?.('query')}
+                className="mt-4 inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold hover:bg-primary-container"
+              >
+                {t('action.continue', { n: 5 })}
+                <Icon name="arrow_forward" className="text-[18px]" />
+              </button>
             </div>
           </div>
         </div>

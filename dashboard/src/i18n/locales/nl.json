@@ -367,5 +367,9 @@
   "detail.backDashboard": "Terug naar het overzicht",
   "detail.backTheme": "Terug naar het thema",
   "detail.queryFailed": "De samenvatting kon niet worden opgehaald.",
-  "ins.filtered.hint": "Laat alle filters uit om alleen de algemene samenvattingen te bewaren."
+  "ins.filtered.hint": "Laat alle filters uit om alleen de algemene samenvattingen te bewaren.",
+  "stepper.label": "Stappen",
+  "stepper.position": "Stap {n} van {total}",
+  "state.optional": "optioneel",
+  "pipeline.statusError": "De voortgang van de stappen kon niet worden geladen."
 }

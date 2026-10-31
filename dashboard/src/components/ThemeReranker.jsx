@@ -1,15 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useNdjsonStream } from '../hooks/useNdjsonStream';
-import { apiUrl } from '../services/api';
+import { apiUrl, postJson } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
+import Icon from './Icon';
+import GateReason from './pipeline/GateReason';
+import { usePipelineStatus } from '../context/PipelineStatusContext';
+import { deriveStepView } from '../utils/stepView';
 
-const DONE_STATUSES = new Set(['ready', 'completed', 'success', 'done']);
 const DEFAULT_RERANKER = 'zeroentropy/zerank-2-reranker';
 
-export default function ThemeReranker({ onSuccess }) {
+export default function ThemeReranker({ onNavigate }) {
   const { t, formatNumber } = useI18n();
   const stream = useNdjsonStream();
+  const { status: pipeline, refresh } = usePipelineStatus();
+  const view = deriveStepView(pipeline, 'rerank');
+  const vectorsAt = pipeline?.steps?.vectors?.completed_at;
   const [status, setStatus] = useState(null);
+  const [skipping, setSkipping] = useState(false);
   const [rerankerModel, setRerankerModel] = useState(DEFAULT_RERANKER);
   const [allowModelDownload, setAllowModelDownload] = useState(true);
   const [maxDocuments, setMaxDocuments] = useState('');
@@ -30,7 +37,21 @@ export default function ThemeReranker({ onSuccess }) {
       }
     };
     fetchStatus();
-  }, []);
+  }, [vectorsAt]);
+
+  // Skipping is saved server-side; the response is the new pipeline status.
+  const handleSkip = async () => {
+    setSkipping(true);
+    try {
+      const res = await postJson('/api/pipeline/skip-rerank', { skipped: true });
+      if (res.ok) onNavigate?.('insights');
+    } catch (e) {
+      // offline: refresh() below shows the offline message
+    } finally {
+      setSkipping(false);
+      refresh();
+    }
+  };
 
   const handleRerank = async () => {
     setLoading(true);
@@ -39,6 +60,7 @@ export default function ThemeReranker({ onSuccess }) {
     setLogs([]);
     setResult(null);
 
+    let sawEvent = false;
     try {
       const payload = {
         reranker_model: rerankerModel.trim() || DEFAULT_RERANKER,
@@ -50,6 +72,10 @@ export default function ThemeReranker({ onSuccess }) {
 
       await stream.start('/api/rerank-theme-assignments', payload, {
         onEvent: (data) => {
+          if (!sawEvent) {
+            sawEvent = true;
+            refresh();
+          }
           if (data.status === 'progress') {
             if (data.progress !== undefined) setProgress(data.progress);
             if (data.stage) setCurrentStage(data.stage);
@@ -58,7 +84,6 @@ export default function ThemeReranker({ onSuccess }) {
             setResult(data);
             setProgress(100);
             setCurrentStage('save');
-            setTimeout(() => onSuccess?.(), 1200);
           } else if (data.status === 'error') {
             setResult({ error: data.error });
           }
@@ -68,10 +93,12 @@ export default function ThemeReranker({ onSuccess }) {
       setResult({ error: error.message });
     } finally {
       setLoading(false);
+      refresh();
     }
   };
 
-  const vectorReady = Boolean(status?.vector_db_ready);
+  const vectorReady = !view.blockedBy && Boolean(pipeline);
+  const showSkip = !['done', 'skipped', 'stale'].includes(view.state);
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 p-6 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100">
@@ -89,17 +116,11 @@ export default function ThemeReranker({ onSuccess }) {
 
       {!loading && !result && (
         <div className="space-y-6">
-          {!vectorReady && (
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
-              {t('gate.reason', { n: 2, name: t('step.vectors') })}
-            </div>
-          )}
-
           {vectorReady && (
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('rerank.status')}</p>
               <p className="text-lg font-black text-slate-900 mt-1">
-                {DONE_STATUSES.has(status?.theme_reranker_status) ? t('state.done') : t('state.not_started')}
+                {t(view.state === 'stale' || view.state === 'skipped' || view.state === 'done' ? 'state.' + view.state : 'state.not_started')}
               </p>
             </div>
           )}
@@ -146,13 +167,24 @@ export default function ThemeReranker({ onSuccess }) {
             </details>
           </div>
 
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-gray-50 rounded-xl border border-gray-100">
             <div className="text-sm text-gray-600">
               {t('rerank.hint')}
             </div>
+            {showSkip && (
+              <button
+                type="button"
+                onClick={handleSkip}
+                disabled={!view.canStart || skipping}
+                className="min-h-[44px] px-1 py-2.5 text-sm font-semibold text-primary underline underline-offset-[3px] hover:text-primary-container disabled:opacity-50 disabled:no-underline"
+              >
+                {t('action.skip')}
+              </button>
+            )}
+            <GateReason view={view} onNavigate={onNavigate} className="ml-auto" />
             <button
               onClick={handleRerank}
-              disabled={!vectorReady || loading}
+              disabled={!view.canStart || loading}
               className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-sky-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 disabled:opacity-50 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300"
             >
               {t('rerank.start')}
@@ -218,6 +250,14 @@ export default function ThemeReranker({ onSuccess }) {
                   <p className="text-2xl font-black text-emerald-700 mt-1">{result.low_information_reassigned}</p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => onNavigate?.('insights')}
+                className="mt-6 inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold hover:bg-primary-container"
+              >
+                {t('action.continue', { n: 4 })}
+                <Icon name="arrow_forward" className="text-[18px]" />
+              </button>
             </>
           )}
         </div>
