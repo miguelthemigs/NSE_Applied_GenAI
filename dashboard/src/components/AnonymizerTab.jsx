@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNdjsonStream } from '../hooks/useNdjsonStream';
 import { apiUrl } from '../services/api';
+import { useI18n } from '../i18n/I18nProvider';
+import Icon from './Icon';
 
-export default function AnonymizerTab({ onComplete, existingAnonymized }) {
+export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymized }) {
+  const { t, formatNumber, formatDate } = useI18n();
   const stream = useNdjsonStream();
   const [file, setFile] = useState(null);
   const [columns, setColumns] = useState([]);
@@ -73,7 +76,6 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
   const loadLastReport = () => {
     if (!lastReport) return;
     setResult({
-      message: `Resultaten van vorige run (${lastReport.timestamp})`,
       rows_processed: lastReport.rows_processed,
       columns_anonymized: lastReport.columns,
       stats: {
@@ -95,7 +97,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
     setLoading(true);
     setResult(null);
     setProgress(0);
-    setStatusMessage('Verificatie starten...');
+    setStatusMessage(t('anon.check.starting'));
     try {
       await stream.start('/api/run-anonymize-check', undefined, {
         onEvent: (data) => {
@@ -105,9 +107,9 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
           } else if (data.status === 'success') {
             setResult(data);
             setProgress(100);
-            setStatusMessage('Verificatie voltooid!');
+            setStatusMessage(t('state.done'));
             setLastReport({
-              timestamp: new Date().toLocaleString('nl-NL'),
+              timestamp: new Date().toISOString(),
               rows_processed: data.rows_processed,
               total_entities: data.stats.total_entities,
               ...data.stats,
@@ -128,42 +130,22 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
   };
 
   const MASKING_INFO = [
-    { tag: '[NAME]',     meaning: 'Names / persons',                                           bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' },
-    { tag: '[LOCATION]', meaning: 'Addresses / locations',                                    bg: 'bg-blue-100',   text: 'text-blue-700',   border: 'border-blue-200'   },
-    { tag: '[PII]',      meaning: 'Identifiers — email, phone, BSN, student nr, usernames',   bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200' },
-    { tag: '[TITLE]',    meaning: 'Titles (Meneer / Mevrouw)',                                 bg: 'bg-rose-100',   text: 'text-rose-700',   border: 'border-rose-200'   },
-    { tag: '[HEALTH]',   meaning: 'Health info — illness, diagnosis, disability, medication',  bg: 'bg-emerald-100',text: 'text-emerald-700',border: 'border-emerald-200'},
-  ];
-
-  const LAYER_OPTIONS = [
-    {
-      id: 'presidio',
-      name: 'Layer 1: Presidio + custom regex',
-      badge: 'Fast baseline',
-      description: 'spaCy NL/EN NER plus Fontys-specific regex for names, titles, room codes, floors, BSN, phone, student numbers and emails.',
-      accent: 'indigo',
-    },
-    {
-      id: 'eu-pii',
-      name: 'Layer 2: EU-PII-Safeguard',
-      badge: 'Best recall',
-      description: 'Hugging Face token-classification model for extra GDPR/PII entities missed by regex or Presidio.',
-      accent: 'purple',
-    },
-    {
-      id: 'openai-privacy-filter',
-      name: 'Layer 2: OpenAI Privacy Filter',
-      badge: 'Experimental',
-      description: 'Optional extra privacy filter backend. Use only when the model is supported in your local Transformers setup.',
-      accent: 'rose',
-    },
+    { tag: '[NAME]',     key: 'NAME',     bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200', color: 'indigo' },
+    { tag: '[LOCATION]', key: 'LOCATION', bg: 'bg-blue-100',   text: 'text-blue-700',   border: 'border-blue-200',   color: 'blue' },
+    { tag: '[PII]',      key: 'PII',      bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', color: 'purple' },
+    { tag: '[TITLE]',    key: 'TITLE',    bg: 'bg-rose-100',   text: 'text-rose-700',   border: 'border-rose-200',   color: 'rose' },
+    { tag: '[HEALTH]',   key: 'HEALTH',   bg: 'bg-emerald-100',text: 'text-emerald-700',border: 'border-emerald-200', color: 'emerald' },
   ];
 
   const LAYER_PRESETS = [
-    { label: 'Fast', layers: ['presidio'], hint: 'Quick regex + spaCy pass' },
-    { label: 'Recommended', layers: ['presidio', 'eu-pii'], hint: 'Matches the privacy_officer flow' },
-    { label: 'Deep', layers: ['presidio', 'eu-pii', 'openai-privacy-filter'], hint: 'All available layers' },
+    { id: 'fast', layers: ['presidio'] },
+    { id: 'recommended', layers: ['presidio', 'eu-pii'] },
+    { id: 'deep', layers: ['presidio', 'eu-pii', 'openai-privacy-filter'] },
   ];
+
+  const formatTimestamp = (ts) => {
+    try { return formatDate(ts); } catch { return String(ts ?? ''); }
+  };
 
   const isQuestionnaireColumn = (col) => {
     const name = String(col).trim();
@@ -219,26 +201,18 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
     );
   };
 
-  const toggleLayer = (layer) => {
-    setSelectedLayers(prev =>
-      prev.includes(layer)
-        ? prev.filter(l => l !== layer)
-        : [...prev, layer]
-    );
-  };
-
   const handleAnonymize = async (overrideColumns = null, overrideLayers = null, overrideVerification = null) => {
     const cols = overrideColumns ?? selectedColumns;
     const lyrs = overrideLayers ?? selectedLayers;
     const verify = overrideVerification ?? runVerification;
 
     if (cols.length === 0) {
-      setResult({ error: 'Select at least one column' });
+      setResult({ errorKey: 'anon.err.columns' });
       return;
     }
 
     if (lyrs.length === 0) {
-      setResult({ error: 'Select at least one anonymization layer' });
+      setResult({ errorKey: 'anon.err.layers' });
       return;
     }
 
@@ -246,7 +220,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
     setStep(3);
     setResult(null);
     setProgress(0);
-    setStatusMessage('Initializing stream...');
+    setStatusMessage(t('anon.start.busy'));
     setCurrentPreview('');
     setCheckpoint(null);
 
@@ -261,11 +235,11 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
             if (data.progress !== undefined) setProgress(data.progress);
             if (data.message) setStatusMessage(data.message);
             if (data.preview) setCurrentPreview(data.preview);
-            if (data.checkpoint_saved && data.row) setLastCheckpointRow(`${data.column} — rij ${data.row}/${data.total_rows}`);
+            if (data.checkpoint_saved && data.row) setLastCheckpointRow(`${data.column} (${data.row}/${data.total_rows})`);
           } else if (data.status === 'success') {
             setResult(data);
             setProgress(100);
-            setStatusMessage('Complete!');
+            setStatusMessage(t('state.done'));
             setTimeout(() => {
               if (typeof onComplete === 'function') onComplete();
             }, 1500);
@@ -283,16 +257,16 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 p-6 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100 transition-all duration-500">
+    <div className="max-w-4xl mx-auto space-y-8 p-3 sm:p-6 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100 transition-all duration-500">
       <div className="flex items-center space-x-4 pb-4 border-b border-gray-100">
         <div className="p-3 bg-gradient-to-tr from-indigo-500 to-purple-500 text-white rounded-xl shadow-lg">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
         </div>
-        <div>
-          <h2 className="text-3xl font-extrabold tracking-tight text-gray-900">Data Anonymization Engine</h2>
-          <p className="text-gray-500 text-sm mt-1">Transform sensitive survey data safely via layered masking</p>
+        <div className="min-w-0">
+          <h2 className="text-2xl sm:text-3xl break-words font-extrabold tracking-tight text-gray-900">{t('step.anonymize')}</h2>
+          <p className="text-gray-500 text-sm mt-1">{t('step.anonymize.lead')}</p>
         </div>
       </div>
 
@@ -304,7 +278,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
 
           {[1, 2, 3].map(s => (
             <div key={s} className={`flex items-center justify-center w-10 h-10 rounded-full font-bold transition-all duration-500 shadow-md ${step >= s ? 'bg-indigo-600 text-white scale-110' : 'bg-white text-gray-400 border-2 border-gray-200'}`}>
-              {step > s ? '✓' : s}
+              {step > s ? <Icon name="check" /> : s}
             </div>
           ))}
         </div>
@@ -320,12 +294,15 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                       <svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>
                     </div>
                     <div>
-                      <p className="font-bold text-amber-900">Onderbroken anonimisering gevonden</p>
+                      <p className="font-bold text-amber-900">{t('anon.interrupted.title')}</p>
                       <p className="text-sm text-amber-700 mt-1">
-                        <span className="font-semibold">{checkpoint.completed_columns.length} van {checkpoint.total_columns.length} kolom(men)</span> al klaar
-                        {checkpoint.current_col && <span> — gestopt bij <span className="font-mono font-semibold">"{checkpoint.current_col}"</span></span>}
+                        <span className="font-semibold">
+                          {checkpoint.current_col
+                            ? t('anon.interrupted.progress', { x: checkpoint.completed_columns.length, y: checkpoint.total_columns.length, col: checkpoint.current_col })
+                            : t('anon.interrupted.progressNoCol', { x: checkpoint.completed_columns.length, y: checkpoint.total_columns.length })}
+                        </span>
                       </p>
-                      <p className="text-xs text-amber-600 mt-1">Je kunt verdergaan zonder opnieuw te beginnen.</p>
+                      <p className="text-xs text-amber-600 mt-1">{t('anon.interrupted.hint')}</p>
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0">
@@ -333,13 +310,13 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                       onClick={() => setCheckpoint(null)}
                       className="px-3 py-2 bg-white text-amber-700 text-xs font-bold rounded-lg shadow-sm hover:shadow-md transition-all ring-1 ring-amber-300"
                     >
-                      Negeren
+                      {t('anon.restart')}
                     </button>
                     <button
                       onClick={() => handleAnonymize(checkpoint.total_columns, checkpoint.selected_layers, runVerification)}
                       className="px-5 py-2 bg-amber-500 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-amber-600 transition-all"
                     >
-                      Verdergaan
+                      {t('anon.resume')}
                     </button>
                   </div>
                 </div>
@@ -352,15 +329,15 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                     <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                   </div>
                   <div>
-                    <p className="font-semibold text-slate-700 text-sm">Vorige run beschikbaar</p>
-                    <p className="text-xs text-slate-500">{lastReport.timestamp} — {lastReport.rows_processed} rijen, {lastReport.total_entities} entiteiten verwijderd</p>
+                    <p className="font-semibold text-slate-700 text-sm">{t('anon.previous.title')}</p>
+                    <p className="text-xs text-slate-500">{t('anon.previous.meta', { date: formatTimestamp(lastReport.timestamp), n: formatNumber(lastReport.rows_processed ?? 0), m: formatNumber(lastReport.total_entities ?? 0) })}</p>
                   </div>
                 </div>
                 <button
                   onClick={loadLastReport}
                   className="px-4 py-2 bg-slate-700 text-white text-sm font-bold rounded-lg hover:bg-slate-800 transition-all shrink-0"
                 >
-                  Bekijk resultaten
+                  {t('anon.previous.view')}
                 </button>
               </div>
             )}
@@ -381,34 +358,34 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                     </svg>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-lg font-semibold text-gray-800">Drop your CSV file here or click to browse</p>
-                    <p className="text-sm text-gray-500">Supports .csv and .xlsx files</p>
+                    <p className="text-lg font-semibold text-gray-800">{t('anon.drop.title')}</p>
+                    <p className="text-sm text-gray-500">{t('anon.drop.hint')}</p>
                   </div>
-                  {file && <p className="mt-4 inline-flex items-center text-sm font-medium text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full ring-1 ring-emerald-200">✓ {file.name}</p>}
+                  {file && <p className="mt-4 inline-flex items-center text-sm font-medium text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full ring-1 ring-emerald-200"><Icon name="check" className="mr-1" />{file.name}</p>}
                 </div>
               </div>
             </div>
 
             {existingAnonymized && (
               <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl space-y-3">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center space-x-3 text-indigo-800">
                     <svg className="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
-                    <span className="text-sm font-medium">Er is al een geanonimiseerde dataset beschikbaar.</span>
+                    <span className="text-sm font-medium">{t('anon.existing')}</span>
                   </div>
-                  <div className="flex gap-2 shrink-0">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       onClick={runCheck}
                       disabled={loading}
                       className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-indigo-700 transition-all disabled:opacity-50"
                     >
-                      {loading ? 'Bezig...' : 'Check uitvoeren'}
+                      {loading ? t('state.working') : t('anon.check.run')}
                     </button>
                     <button
-                      onClick={() => { if (typeof onComplete === 'function') onComplete(); }}
+                      onClick={() => { if (typeof onNavigate === 'function') onNavigate('vectors'); }}
                       className="px-4 py-2 bg-white text-indigo-600 text-sm font-bold rounded-lg shadow-sm hover:shadow-md transition-all ring-1 ring-indigo-200 hover:bg-indigo-50"
                     >
-                      Overslaan
+                      {t('action.continue', { n: 2 })}
                     </button>
                   </div>
                 </div>
@@ -432,7 +409,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
         {step === 2 && (
           <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
             <div className="p-5 bg-indigo-50 border border-indigo-100 rounded-xl">
-              <p className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-3">What gets masked</p>
+              <p className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-3">{t('anon.removes.title')}</p>
               <div className="flex flex-wrap gap-2">
                 {MASKING_INFO.map((item) => (
                   <div
@@ -440,20 +417,20 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${item.border} ${item.bg} shadow-sm`}
                   >
                     <span className={`font-mono text-xs font-black ${item.text}`}>{item.tag}</span>
-                    <span className="text-xs text-gray-600">{item.meaning}</span>
+                    <span className="text-xs text-gray-600">{t('anon.mask.' + item.key)}</span>
                   </div>
                 ))}
               </div>
               <p className="text-xs text-indigo-700 mt-3">
-                Selected layers replace detected entities with these tags; the backend receives the exact layer IDs you choose below.
+                {t('anon.removes.note')}
               </p>
             </div>
             <div className="grid md:grid-cols-2 gap-6">
               {/* Columns Section */}
               <div className="space-y-4 p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
                 <div className="flex items-center space-x-2 pb-2 border-b border-gray-50">
-                  <span className="text-xl">📋</span>
-                  <h3 className="font-bold text-gray-800">Select Columns</h3>
+                  <Icon name="view_column" className="text-xl text-gray-500" />
+                  <h3 className="font-bold text-gray-800">{t('anon.columns.title')}</h3>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-64 overflow-y-auto p-1">
                   {columns.map(col => {
@@ -479,104 +456,51 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                 </div>
               </div>
 
-              {/* Layers Section */}
-              <div className="space-y-4 p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
-                <div className="flex items-center justify-between gap-3 pb-2 border-b border-gray-50">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xl">🛡️</span>
-                    <h3 className="font-bold text-gray-800">Choose Layers</h3>
-                  </div>
-                  <span className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-100 px-2 py-1 rounded-full">
-                    {selectedLayers.length} active
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
+              {/* Layers Section (Advanced) */}
+              <details className="space-y-4 p-6 bg-white border border-gray-100 shadow-sm rounded-2xl self-start">
+                <summary className="flex items-center gap-2 cursor-pointer font-bold text-gray-800">
+                  <Icon name="tune" className="text-xl text-gray-500" />
+                  {t('action.advanced')}
+                </summary>
+                <div className="space-y-3 pt-4" role="radiogroup" aria-label={t('anon.layers.title')}>
+                  <h3 className="font-bold text-gray-800 text-sm">{t('anon.layers.title')}</h3>
                   {LAYER_PRESETS.map((preset) => {
                     const active = preset.layers.length === selectedLayers.length
                       && preset.layers.every((layer) => selectedLayers.includes(layer));
                     return (
                       <button
-                        key={preset.label}
+                        key={preset.id}
                         type="button"
+                        role="radio"
+                        aria-checked={active}
                         onClick={() => setSelectedLayers(preset.layers)}
-                        className={`p-2 rounded-xl border text-left transition-all ${active ? 'border-purple-500 bg-purple-50 shadow-sm' : 'border-gray-100 bg-gray-50 hover:border-purple-200 hover:bg-white'}`}
-                        title={preset.hint}
+                        className={`w-full p-3 rounded-xl border text-left transition-all ${active ? 'border-primary bg-primary/5 shadow-sm' : 'border-gray-100 bg-gray-50 hover:border-gray-300 hover:bg-white'}`}
                       >
-                        <span className={`block text-xs font-black ${active ? 'text-purple-800' : 'text-gray-700'}`}>{preset.label}</span>
-                        <span className="block text-[10px] leading-tight text-gray-500 mt-0.5">{preset.layers.length} layer{preset.layers.length > 1 ? 's' : ''}</span>
+                        <span className={`block text-sm font-bold ${active ? 'text-primary' : 'text-gray-700'}`}>{t('anon.preset.' + preset.id)}</span>
+                        <span className="block text-xs leading-snug text-gray-500 mt-0.5">{t('anon.preset.' + preset.id + '.lead')}</span>
                       </button>
                     );
                   })}
                 </div>
-
-                <div className="space-y-3">
-                  {LAYER_OPTIONS.map((layer) => {
-                    const isSelected = selectedLayers.includes(layer.id);
-                    const selectedClasses = {
-                      indigo: 'border-indigo-500 bg-indigo-50/70 shadow-sm',
-                      purple: 'border-purple-500 bg-purple-50/70 shadow-sm',
-                      rose: 'border-rose-500 bg-rose-50/70 shadow-sm',
-                    }[layer.accent];
-                    const iconClasses = {
-                      indigo: 'bg-indigo-500',
-                      purple: 'bg-purple-500',
-                      rose: 'bg-rose-500',
-                    }[layer.accent];
-                    const textClasses = {
-                      indigo: 'text-indigo-900',
-                      purple: 'text-purple-900',
-                      rose: 'text-rose-900',
-                    }[layer.accent];
-
-                    return (
-                      <label
-                        key={layer.id}
-                        className={`flex items-start p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${isSelected ? selectedClasses : 'border-gray-100 hover:border-gray-200 bg-white'}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleLayer(layer.id)}
-                          className="sr-only"
-                        />
-                        <div className={`mt-0.5 flex items-center justify-center w-5 h-5 rounded flex-shrink-0 mr-4 transition-colors ${isSelected ? iconClasses : 'border border-gray-300'}`}>
-                          {isSelected && <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className={`font-bold text-sm ${isSelected ? textClasses : 'text-gray-700'}`}>{layer.name}</p>
-                            <span className="text-[10px] font-black uppercase tracking-wide text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{layer.badge}</span>
-                          </div>
-                          <p className="text-xs text-gray-500 mt-1 leading-relaxed">{layer.description}</p>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-
-                <p className="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-xl p-3">
-                  Recommended uses the same layered flow as <code className="font-mono text-purple-700">privacy_officer</code>: collect spans first, merge/filter them, then apply masks once.
-                </p>
-              </div>
+              </details>
             </div>
 
             {/* Custom Word Blocklist */}
             <div className="p-6 bg-white border border-gray-100 shadow-sm rounded-2xl space-y-4">
               <div className="flex items-center justify-between pb-2 border-b border-gray-50">
                 <div className="flex items-center space-x-2">
-                  <span className="text-xl">🚫</span>
-                  <h3 className="font-bold text-gray-800">Custom Word Filter</h3>
+                  <Icon name="block" className="text-xl text-gray-500" />
+                  <h3 className="font-bold text-gray-800">{t('anon.blocklist.title')}</h3>
                 </div>
                 {blocklist.length > 0 && (
                   <span className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-100 px-2 py-1 rounded-full">
-                    {blocklist.length} word{blocklist.length !== 1 ? 's' : ''}
+                    {t('anon.blocklist.count', { n: blocklist.length })}
                   </span>
                 )}
               </div>
 
               <p className="text-xs text-gray-500 leading-relaxed">
-                Words or phrases added here are always masked as <span className="font-mono font-bold text-purple-700">[PII]</span> during anonymization — regardless of what the NER models detect. Applied as a fast post-processing step with no impact on performance. Persists between runs.
+                {t('anon.blocklist.lead')}
               </p>
 
               <div className="flex gap-2">
@@ -585,7 +509,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                   value={blocklistInput}
                   onChange={e => setBlocklistInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && addBlocklistWord()}
-                  placeholder="Type a word or phrase and press Enter…"
+                  placeholder={t('anon.blocklist.placeholder')}
                   className="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-purple-400 transition-all"
                 />
                 <button
@@ -594,7 +518,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                   disabled={!blocklistInput.trim()}
                   className="px-4 py-2 bg-purple-600 text-white text-sm font-bold rounded-xl hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
-                  Add
+                  {t('anon.blocklist.add')}
                 </button>
               </div>
 
@@ -610,21 +534,22 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                         type="button"
                         onClick={() => removeBlocklistWord(word)}
                         className="text-purple-400 hover:text-purple-700 transition-colors leading-none"
-                        title={`Remove "${word}"`}
+                        title={t('anon.blocklist.remove', { word })}
+                        aria-label={t('anon.blocklist.remove', { word })}
                       >
-                        ×
+                        <Icon name="close" className="text-base" />
                       </button>
                     </span>
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-gray-400 italic">No custom words added yet.</p>
+                <p className="text-xs text-gray-400 italic">{t('anon.blocklist.empty')}</p>
               )}
             </div>
 
             {preview.length > 0 && (
               <div className="p-5 bg-gray-50 border border-gray-200 rounded-xl">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Dataset Preview (Row 1)</p>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">{t('anon.preview.title')}</p>
                 <div className="flex gap-4 overflow-x-auto pb-2 custom-scrollbar">
                   {selectedColumns.slice(0, 4).map(col => (
                     <div key={col} className="min-w-[200px] max-w-[250px] p-3 bg-white rounded-lg shadow-sm border border-gray-100 flex-shrink-0">
@@ -634,7 +559,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                   ))}
                   {selectedColumns.length > 4 && (
                     <div className="min-w-[100px] flex items-center justify-center text-sm font-medium text-gray-400">
-                      +{selectedColumns.length - 4} more
+                      {t('anon.preview.more', { n: selectedColumns.length - 4 })}
                     </div>
                   )}
                 </div>
@@ -646,17 +571,17 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                 onClick={() => setStep(1)}
                 className="px-6 py-3 bg-white text-gray-700 font-bold rounded-xl hover:bg-gray-50 border border-gray-200 transition-colors"
               >
-                Go Back
+                {t('anon.back')}
               </button>
 
               <button
                 type="button"
                 onClick={() => setRunVerification(prev => !prev)}
                 className={`px-5 py-3 rounded-xl font-bold border transition-all text-sm flex items-center gap-2 ${runVerification ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}
-                title="Run Presidio verification after anonymization"
+                title={t('anon.verify.title')}
               >
-                <span>🔍</span>
-                {runVerification ? 'Verify: On' : 'Verify: Off'}
+                <Icon name="fact_check" />
+                {runVerification ? t('anon.verify.on') : t('anon.verify.off')}
               </button>
 
               <button
@@ -667,9 +592,9 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                 {loading ? (
                   <span className="flex items-center gap-2">
                     <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    Initializing Models...
+                    {t('anon.start.busy')}
                   </span>
-                ) : 'Launch Anonymization Engine 🚀'}
+                ) : t('anon.start')}
               </button>
             </div>
           </div>
@@ -698,9 +623,9 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                           <span className="relative inline-flex rounded-full h-4 w-4 bg-indigo-500"></span>
                         </div>
                       ) : (
-                        <span className="text-emerald-400">✓</span>
+                        <Icon name="check_circle" className="text-emerald-400" />
                       )}
-                      {progress < 100 ? 'Processing Stream' : 'Anonymization Complete'}
+                      {progress < 100 ? t('state.in_progress', { pct: progress }) : t('state.done')}
                     </h3>
                     <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
                       {progress}%
@@ -710,10 +635,9 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                   <div className="p-4 bg-white/5 rounded-xl border border-white/10 backdrop-blur-sm min-h-[120px] flex flex-col justify-center">
                     <div className="flex flex-wrap gap-2 mb-3">
                       {selectedLayers.map((layerId) => {
-                        const layer = LAYER_OPTIONS.find((item) => item.id === layerId);
                         return (
                           <span key={layerId} className="text-[10px] font-black uppercase tracking-wide text-indigo-100 bg-indigo-500/20 border border-indigo-400/30 px-2 py-1 rounded-full">
-                            {layer?.name || layerId}
+                            {layerId}
                           </span>
                         );
                       })}
@@ -724,9 +648,9 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                     </p>
                     {currentPreview && (
                       <div className="mt-2 animate-in fade-in slide-in-from-bottom-2">
-                        <p className="text-gray-400 text-xs mb-1 uppercase tracking-wider font-bold">Live Data Feed</p>
+                        <p className="text-gray-400 text-xs mb-1 uppercase tracking-wider font-bold">{t('anon.live')}</p>
                         <p className="text-gray-200 text-sm font-mono leading-relaxed line-clamp-2">
-                          <span className="text-emerald-400 mr-2">▶</span>
+                          <Icon name="play_arrow" className="text-emerald-400 mr-2 align-middle" />
                           {currentPreview}
                         </p>
                       </div>
@@ -734,7 +658,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                     {lastCheckpointRow && progress < 100 && (
                       <div className="mt-3 flex items-center gap-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
                         <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
-                        Checkpoint opgeslagen — {lastCheckpointRow}
+                        {t('anon.checkpointSaved')}
                       </div>
                     )}
                   </div>
@@ -743,15 +667,15 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                 <div className="w-full md:w-48 shrink-0 flex flex-col gap-3">
                   <div className={`p-3 rounded-lg border flex items-center gap-3 transition-colors ${progress > 10 ? 'bg-indigo-500/20 border-indigo-500/30' : 'bg-gray-800 border-gray-700'}`}>
                     <div className={`w-2 h-2 rounded-full ${progress > 10 ? 'bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.8)]' : 'bg-gray-600'}`}></div>
-                    <span className={`text-sm font-medium ${progress > 10 ? 'text-indigo-200' : 'text-gray-500'}`}>Models Loaded</span>
+                    <span className={`text-sm font-medium ${progress > 10 ? 'text-indigo-200' : 'text-gray-500'}`}>{t('stage.load')}</span>
                   </div>
                   <div className={`p-3 rounded-lg border flex items-center gap-3 transition-colors ${progress > 20 ? 'bg-purple-500/20 border-purple-500/30' : 'bg-gray-800 border-gray-700'}`}>
                     <div className={`w-2 h-2 rounded-full ${progress > 20 ? 'bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,0.8)]' : 'bg-gray-600'}`}></div>
-                    <span className={`text-sm font-medium ${progress > 20 ? 'text-purple-200' : 'text-gray-500'}`}>Analyzing Text</span>
+                    <span className={`text-sm font-medium ${progress > 20 ? 'text-purple-200' : 'text-gray-500'}`}>{t('stage.process')}</span>
                   </div>
                   <div className={`p-3 rounded-lg border flex items-center gap-3 transition-colors ${progress === 100 ? 'bg-emerald-500/20 border-emerald-500/30' : 'bg-gray-800 border-gray-700'}`}>
                     <div className={`w-2 h-2 rounded-full ${progress === 100 ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-gray-600'}`}></div>
-                    <span className={`text-sm font-medium ${progress === 100 ? 'text-emerald-200' : 'text-gray-500'}`}>Selected Layers Applied</span>
+                    <span className={`text-sm font-medium ${progress === 100 ? 'text-emerald-200' : 'text-gray-500'}`}>{t('stage.save')}</span>
                   </div>
                 </div>
 
@@ -762,8 +686,15 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
               <div className="p-4 bg-red-50 text-red-700 rounded-xl border border-red-200 flex items-start gap-3">
                 <svg className="w-5 h-5 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>
                 <div>
-                  <p className="font-bold">Anonymization Failed</p>
-                  <p className="text-sm mt-1">{result.error}</p>
+                  <p className="font-bold">{t('anon.failed')}</p>
+                  {result.errorKey ? (
+                    <p className="text-sm mt-1">{t(result.errorKey)}</p>
+                  ) : (
+                    <details className="text-sm mt-1">
+                      <summary className="cursor-pointer">{t('action.details')}</summary>
+                      <p className="mt-1">{result.error}</p>
+                    </details>
+                  )}
                 </div>
               </div>
             )}
@@ -772,27 +703,19 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
               <div className="p-6 bg-white border border-gray-100 rounded-2xl shadow-sm space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="flex items-center justify-between pb-3 border-b border-gray-100">
                   <div className="flex items-center gap-2">
-                    <span className="text-xl">🔍</span>
-                    <h3 className="font-bold text-gray-800">
-                      {result.stats.verification_skipped ? 'Anonymized Masks' : 'Anonymization Verification'}
-                    </h3>
+                    <Icon name="fact_check" className="text-xl text-gray-500" />
+                    <h3 className="font-bold text-gray-800">{t('anon.results.title')}</h3>
                   </div>
                   {result.stats.verification_skipped
-                    ? <span className="text-xs font-bold text-slate-700 bg-slate-50 border border-slate-200 px-3 py-1 rounded-full">Verification skipped</span>
+                    ? <span className="text-xs font-bold text-slate-700 bg-slate-50 border border-slate-200 px-3 py-1 rounded-full">{t('state.unverified')}</span>
                     : Object.values(result.stats.missed_counts ?? {}).every(v => v === 0)
-                    ? <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">All clear ✓</span>
-                    : <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">⚠ Possible leaks</span>
+                    ? <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">{t('anon.allClear')}</span>
+                    : <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">{t('state.needs_review', { n: Object.values(result.stats.missed_counts ?? {}).reduce((a, v) => a + v, 0) })}</span>
                   }
                 </div>
 
                 <div className="space-y-3">
-                  {[
-                    { tag: '[NAME]',     key: 'NAME',     label: 'Names / persons',                      color: 'indigo'  },
-                    { tag: '[LOCATION]', key: 'LOCATION', label: 'Addresses / locations',                color: 'blue'    },
-                    { tag: '[PII]',      key: 'PII',      label: 'Email, phone, BSN, student nr, etc.',  color: 'purple'  },
-                    { tag: '[TITLE]',    key: 'TITLE',    label: 'Titles (Meneer, Mevrouw, etc.)',        color: 'rose'    },
-                    { tag: '[HEALTH]',   key: 'HEALTH',   label: 'Health / medical information',         color: 'emerald' },
-                  ].map(({ tag, key, label, color }) => {
+                  {MASKING_INFO.map(({ tag, key, color }) => {
                     const removed        = result.stats.tag_counts[key] ?? 0;
                     const missed         = result.stats.missed_counts?.[key] ?? 0;
                     const missedSamples  = result.stats.missed_samples?.[key] ?? [];
@@ -823,14 +746,14 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                               {tag}
                             </span>
                             <span className={`text-sm font-medium ${removed > 0 || !clean ? 'text-gray-700' : 'text-gray-400'}`}>
-                              {label}
+                              {t('anon.mask.' + key)}
                             </span>
                           </div>
 
                           <div className="flex items-center gap-3 shrink-0 text-sm">
                             {verificationSkipped ? (
                               <span className={`font-bold ${removed > 0 ? `text-${color}-700` : 'text-gray-400'}`}>
-                                {removed} mask{removed === 1 ? '' : 's'}
+                                {t('anon.count.removed', { n: removed })}
                               </span>
                             ) : removed > 0 ? (
                               <button
@@ -838,7 +761,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                                 onClick={() => setExpandedCategory(removedOpen ? null : `${key}-removed`)}
                                 className={`flex items-center gap-1.5 font-medium text-${color}-700 hover:underline cursor-pointer`}
                               >
-                                {removed} removed
+                                {t('anon.count.removed', { n: removed })}
                                 <svg className={`w-4 h-4 transition-transform ${removedOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                                 </svg>
@@ -850,16 +773,16 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                                 onClick={() => setExpandedCategory(missedOpen ? null : `${key}-missed`)}
                                 className="flex items-center gap-1.5 font-bold text-amber-700 hover:underline cursor-pointer"
                               >
-                                <span className="flex items-center justify-center w-6 h-6 bg-amber-400 rounded-full text-white text-xs">!</span>
-                                {missed} possibly missed
+                                <Icon name="warning" className="text-amber-500" />
+                                {t('anon.count.missed', { n: missed })}
                                 <svg className={`w-4 h-4 text-amber-500 transition-transform ${missedOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                                 </svg>
                               </button>
                             ) : removed > 0 ? (
-                              <span className="flex items-center justify-center w-6 h-6 bg-emerald-500 rounded-full text-white text-xs font-bold">✓</span>
+                              <Icon name="check_circle" filled className="text-emerald-500" />
                             ) : (
-                              <span className="text-xs text-gray-400 italic">None detected</span>
+                              <span className="text-xs text-gray-400 italic">{t('anon.none')}</span>
                             )}
                           </div>
                         </div>
@@ -868,7 +791,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                         {!verificationSkipped && removedOpen && (
                           <div className={`border-t border-${color}-100 bg-white px-4 py-3 space-y-2`}>
                             <p className={`text-xs font-bold text-${color}-700 uppercase tracking-wider mb-2`}>
-                              Removed — {removedSamples.length} unique
+                              {t('anon.samples.removed', { n: removedSamples.length })}
                             </p>
                             {removedSamples.length > 0 ? (
                               <div className="flex flex-wrap gap-2">
@@ -879,7 +802,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                                 ))}
                               </div>
                             ) : (
-                              <p className="text-xs text-gray-400 italic">No sample data — restart the backend and re-run anonymization.</p>
+                              <p className="text-xs text-gray-400 italic">{t('anon.samples.none')}</p>
                             )}
                           </div>
                         )}
@@ -888,7 +811,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                         {!verificationSkipped && missedOpen && (
                           <div className="border-t border-amber-200 bg-white px-4 py-3 space-y-2">
                             <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">
-                              Possibly missed — {missedSamples.length} unique
+                              {t('anon.samples.missed', { n: missedSamples.length })}
                             </p>
                             {missedSamples.length > 0 ? (
                               <div className="flex flex-wrap gap-2">
@@ -899,7 +822,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
                                 ))}
                               </div>
                             ) : (
-                              <p className="text-xs text-gray-400 italic">No sample data — restart the backend and re-run anonymization.</p>
+                              <p className="text-xs text-gray-400 italic">{t('anon.samples.none')}</p>
                             )}
                           </div>
                         )}
@@ -910,15 +833,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
 
                 <div className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm text-gray-500">
                   <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  {result.stats.verification_skipped ? (
-                    <>
-                      Scanned <strong className="text-gray-700">{result.stats.total_cells}</strong> cells for inserted masks — <strong className="text-gray-700">{result.stats.total_entities}</strong> masks found. Presidio verification was skipped.
-                    </>
-                  ) : (
-                    <>
-                      Checked <strong className="text-gray-700">{result.stats.total_cells}</strong> cells — <strong className="text-gray-700">{result.stats.total_entities}</strong> entities removed. Output was re-scanned to detect remaining leaks.
-                    </>
-                  )}
+                  {t('anon.summary', { cells: formatNumber(result.stats.total_cells ?? 0), n: formatNumber(result.stats.total_entities ?? 0) })}
                 </div>
               </div>
             )}

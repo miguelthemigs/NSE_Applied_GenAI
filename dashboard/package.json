@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "e2e": "playwright test",
+    "check:copy": "node scripts/check-copy.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

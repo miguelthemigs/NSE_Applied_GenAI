@@ -5,8 +5,12 @@ import ThemeReranker from '../components/ThemeReranker';
 import InsightGenerator from '../components/InsightGenerator';
 import QueryTab from '../components/QueryTab';
 import { apiUrl } from '../services/api';
+import { useI18n } from '../i18n/I18nProvider';
+import Icon from '../components/Icon';
+import { PIPELINE_STEPS } from '../config/pipelineSteps';
 
 export default function PipelineDemo() {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState('anonymize');
   const [isAnonymized, setIsAnonymized] = useState(false);
   const [, setVectorDbReady] = useState(false);
@@ -29,59 +33,55 @@ export default function PipelineDemo() {
     checkStatus();
   }, []);
 
-  const steps = [
-    { id: 'anonymize', title: '1. Anonymize Data', icon: '🔒', enabled: true },
-    { id: 'vectors', title: '2. Build Vector DB', icon: '🗄️', enabled: true },
-    { id: 'rerank', title: '3. Rerank Themes', icon: '🎯', enabled: true },
-    { id: 'insights', title: '4. Generate Insights', icon: '🧠', enabled: true },
-    { id: 'query', title: '5. AI Query', icon: '✨', enabled: true },
-  ];
-
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto space-y-8">
         
         {/* Header */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Data Pipeline</h1>
+          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">{t('page.title')}</h1>
           <p className="mt-2 text-sm text-gray-500">
-            Securely anonymize feedback, vectorize the text, and query using AI.
+            {t('page.lead')}
           </p>
           {isProcessing && (
             <div className="mt-4 p-3 bg-blue-50 border border-blue-300 rounded-lg flex items-center">
-              <div className="animate-spin mr-3 text-xl">⏳</div>
-              <span className="text-blue-700 font-medium">Processing in backend...</span>
+              <Icon name="progress_activity" className="animate-spin mr-3 text-xl" />
+              <span className="text-blue-700 font-medium">{t('state.working')}</span>
             </div>
           )}
         </div>
 
         {/* Navigation Tabs */}
-        <nav className="flex space-x-4 border-b border-gray-200 pb-px" aria-label="Tabs">
-          {steps.map((step) => (
+        <nav className="flex space-x-4 border-b border-gray-200 pb-px overflow-x-auto" aria-label="Tabs">
+          {PIPELINE_STEPS.map((step) => (
             <button
               key={step.id}
               onClick={() => setActiveTab(step.id)}
               disabled={isProcessing}
               className={`
-                flex items-center px-6 py-3 text-sm font-medium rounded-t-lg transition-colors
+                flex items-center shrink-0 px-4 sm:px-6 py-3 text-sm font-medium rounded-t-lg transition-colors
                 ${activeTab === step.id 
                   ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' 
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}
                 ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
               `}
             >
-              <span className="mr-2 text-lg">{step.icon}</span>
-              {step.title}
+              <Icon name={step.icon} className="mr-2 text-lg" />
+              {step.n}. {t('step.' + step.id)}
             </button>
           ))}
         </nav>
 
         {/* Content Area */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 min-h-[500px]">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 sm:p-8 min-h-[500px]">
           {activeTab === 'anonymize' && (
-            <AnonymizerTab existingAnonymized={isAnonymized} onComplete={() => {
-              setIsAnonymized(true);
-            }} />
+            <AnonymizerTab
+              existingAnonymized={isAnonymized}
+              onNavigate={setActiveTab}
+              onComplete={() => {
+                setIsAnonymized(true);
+              }}
+            />
           )}
           
           {activeTab === 'vectors' && (
