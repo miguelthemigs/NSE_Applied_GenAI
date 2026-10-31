@@ -5,6 +5,11 @@ import unittest
 from unittest import mock
 
 
+try:
+    import isolation  # noqa: F401
+except ImportError:  # run as tests.test_llama_cpp_client
+    from tests import isolation  # noqa: F401
+
 llm_clients = import_module("src.pipeline.04_generation.llm_clients")
 llama_cpp_models = import_module("src.pipeline.04_generation.llama_cpp_models")
 

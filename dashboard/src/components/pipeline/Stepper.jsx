@@ -37,6 +37,10 @@ function StateCircle({ step, shown }) {
   } else if (shown === 'error') {
     ring = 'border-2 border-error bg-surface-container-lowest text-error'
     content = <Icon name="error" className="text-[18px]" />
+  } else if (shown === 'unknown') {
+    // No status (backend offline): neutral, neither done nor not started.
+    ring = 'border-2 border-outline-variant text-outline'
+    content = <Icon name="question_mark" className="text-[18px]" />
   } else if (shown === 'ready') {
     ring = 'border-2 border-primary text-primary'
     content = <Icon name={step.icon} className="text-[18px]" />

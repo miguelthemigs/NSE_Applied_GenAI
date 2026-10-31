@@ -198,6 +198,10 @@ test.describe('stepper and soft gating', () => {
     await page.goto('/pipeline-demo')
     await expect(page.getByRole('status').filter({ hasText: 'De analyse-service is niet bereikbaar. Start de app opnieuw.' })).toBeVisible()
     await expect(visiblePanel(page).getByRole('heading', { name: STEP_NAMES[0] })).toBeVisible()
+    // Without a status every step is unknown: never "not done yet", and nothing can start.
+    const tabs = await stepTabs(page)
+    for (const name of STEP_NAMES) await expect(tabs.getByRole('tab', { name: `${name} Onbekend` })).toBeVisible()
+    await expect(tabs.getByText('Nog niet gedaan')).toHaveCount(0)
   })
 
   test('small screens show the collapsed "Stap 2 van 5" control; large screens the full tablist', async ({ page, mockApi }, testInfo) => {

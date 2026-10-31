@@ -6,6 +6,11 @@ from unittest import mock
 
 from flask import Flask
 
+try:
+    import isolation  # noqa: F401
+except ImportError:  # run as tests.test_model_tiers
+    from tests import isolation  # noqa: F401
+
 from src.config import model_tiers
 
 embedding_models = import_module("src.pipeline.02_embedding.embedding_models")

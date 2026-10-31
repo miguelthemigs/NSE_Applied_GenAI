@@ -54,6 +54,15 @@ describe('Stepper', () => {
     expect(screen.getByRole('tab', { name: /Samenvattingen schrijven.*Eerst stap 2/ })).toBeInTheDocument()
   })
 
+  it('without a status (backend offline) every step reads Onbekend, never done or not started', () => {
+    renderStepper({ status: null })
+    const tabs = within(screen.getByRole('tablist', { name: 'Stappen' })).getAllByRole('tab')
+    for (const tab of tabs) {
+      expect(tab).toHaveAccessibleName(/Onbekend/)
+      expect(tab).not.toHaveAccessibleName(/Nog niet gedaan|Volgende stap|Klaar/)
+    }
+  })
+
   it('shows the review count of step 1', () => {
     renderStepper({ status: anonNeedsReview })
     expect(screen.getByRole('tab', { name: /Persoonsgegevens verwijderen.*1 om na te kijken/ })).toBeInTheDocument()

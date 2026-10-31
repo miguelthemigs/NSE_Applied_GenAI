@@ -15,6 +15,11 @@ from unittest import mock
 
 from flask import Flask
 
+try:
+    import isolation  # noqa: F401
+except ImportError:  # run as tests.test_model_downloads
+    from tests import isolation  # noqa: F401
+
 from src.pipeline import model_downloads
 from src.pipeline.model_downloads import DownloadError, ModelNotDownloadedError, download_events, ensure_downloaded
 

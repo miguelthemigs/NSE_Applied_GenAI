@@ -3,6 +3,11 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
+try:
+    import isolation  # noqa: F401
+except ImportError:  # run as tests.test_themes_overview_route
+    from tests import isolation  # noqa: F401
+
 from src.api import insight_routes
 
 

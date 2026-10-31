@@ -91,8 +91,10 @@ describe('deriveStepView', () => {
     },
   )
 
-  it('without a status nothing can start', () => {
-    expect(deriveStepView(null, 'anonymize')).toEqual({ state: 'not_started', blockedBy: null, canStart: false })
+  it('without a status every step is unknown and nothing can start', () => {
+    for (const id of ['anonymize', 'vectors', 'rerank', 'insights', 'query']) {
+      expect(deriveStepView(null, id), id).toEqual({ state: 'unknown', blockedBy: null, canStart: false })
+    }
   })
 })
 

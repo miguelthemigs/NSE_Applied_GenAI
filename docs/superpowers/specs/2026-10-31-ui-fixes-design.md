@@ -137,6 +137,7 @@ If an entry is missing, fall back to the artefact file's mtime.
 | `state.needs_review` | {n} om na te kijken | {n} to review |
 | `state.unverified` | Niet gecontroleerd | Not checked |
 | `state.ready` | Klaar voor gebruik | Ready to use |
+| `state.unknown` | Onbekend | Unknown |
 
 ### Done cards
 

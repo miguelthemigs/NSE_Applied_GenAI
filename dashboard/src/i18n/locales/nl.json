@@ -22,6 +22,7 @@
   "state.needs_review": "{n} om na te kijken",
   "state.unverified": "Niet gecontroleerd",
   "state.ready": "Klaar voor gebruik",
+  "state.unknown": "Onbekend",
   "done.anonymize": "Klaar. {rows} antwoorden gecontroleerd, {removed} persoonsgegevens verwijderd, {review} om na te kijken.",
   "done.anonymize.clear": "Klaar. {rows} antwoorden gecontroleerd, {removed} persoonsgegevens verwijderd. Alles in orde.",
   "done.anonymize.ack": "Ik heb de mogelijke missers bekeken",

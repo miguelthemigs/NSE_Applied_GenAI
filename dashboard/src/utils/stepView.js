@@ -21,17 +21,19 @@ function stateOf(status, stepId) {
  * The view of one step derived from GET /api/pipeline/status.
  * Gating looks at the required steps' states, never at the step's own state:
  * the backend keeps reporting a built vector DB as done even when step 1 is
- * unverified again.
+ * unverified again. Without a status (backend offline or still loading) every
+ * step is 'unknown' and nothing can start.
  */
 export function deriveStepView(status, stepId) {
+  if (!status) return { state: 'unknown', blockedBy: null, canStart: false }
   const step = STEP_BY_ID[stepId]
   let state = stateOf(status, stepId)
   let blockedBy = (step?.requires ?? []).find((req) => !MET.has(stateOf(status, req))) ?? null
-  if (status && state === 'blocked' && !blockedBy) blockedBy = step?.requires?.[0] ?? null // fail closed
+  if (state === 'blocked' && !blockedBy) blockedBy = step?.requires?.[0] ?? null // fail closed
   // 'ready' (step 5) means usable, which a gated step is not.
-  if (status && blockedBy && (state === 'not_started' || state === 'ready')) state = 'blocked'
-  const canStart = Boolean(status) && !status.active_job && !blockedBy
-  return { state, blockedBy: status ? blockedBy : null, canStart }
+  if (blockedBy && (state === 'not_started' || state === 'ready')) state = 'blocked'
+  const canStart = !status.active_job && !blockedBy
+  return { state, blockedBy, canStart }
 }
 
 /** The step to open when no ?step= is given: the first one still needing attention. */

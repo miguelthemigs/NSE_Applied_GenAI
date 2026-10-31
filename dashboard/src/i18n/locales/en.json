@@ -22,6 +22,7 @@
   "state.needs_review": "{n} to review",
   "state.unverified": "Not checked",
   "state.ready": "Ready to use",
+  "state.unknown": "Unknown",
   "done.anonymize": "Done. {rows} answers checked, {removed} personal details removed, {review} to review.",
   "done.anonymize.clear": "Done. {rows} answers checked, {removed} personal details removed. All clear.",
   "done.anonymize.ack": "I have reviewed the possible misses",
