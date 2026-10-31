@@ -7,6 +7,17 @@ const VECTOR_ROUTES = {
   '/api/vector-checkpoint-status': { has_checkpoint: false },
 }
 
+/** The status after a successful build: step 2 done, so its Done card shows. */
+function builtStatus() {
+  const s = statusFixture('anon-done')
+  s.last_updated = '2026-10-31T14:31:00Z'
+  s.steps.vectors = { state: 'done', completed_at: '2026-10-31T14:31:00Z', summary: { documents: 120, tier: 'balanced', model: 'Octen/Octen-Embedding-0.6B' }, checkpoint: null }
+  return s
+}
+
+/** Status route that answers "built" once `isBuilt()` is true. */
+const statusRoute = (isBuilt) => () => (isBuilt() ? builtStatus() : statusFixture('anon-done'))
+
 const START = 'Antwoorden doorzoekbaar maken'
 
 /**
@@ -40,7 +51,8 @@ test.describe('shared progress panel', () => {
 
   test('a running build shows a light panel with stage, percentage and collapsed logs', async ({ page, mockApi }) => {
     await holdBuildStream(page)
-    await mockApi(VECTOR_ROUTES)
+    let built = false
+    await mockApi({ ...VECTOR_ROUTES, '/api/pipeline/status': statusRoute(() => built) })
     await page.goto('/pipeline-demo?step=vectors')
     const vectors = page.locator('#step-panel-vectors')
     await vectors.getByRole('button', { name: START, exact: true }).click()
@@ -65,22 +77,29 @@ test.describe('shared progress panel', () => {
     await expect(vectors.getByText('encoding batch 3')).toBeVisible()
     await expect(vectors.getByText('fetching weights')).toBeVisible()
 
+    built = true
     await push(page, { status: 'success', document_count: 120 })
     await page.evaluate(() => window.__endStream())
     await expect(vectors.getByRole('button', { name: 'Verder naar stap 3' })).toBeVisible()
+    await expect(vectors.getByText('Klaar. 120 antwoorden zijn doorzoekbaar (model: Gebalanceerd).')).toBeVisible()
     await expect(vectors.getByRole('status')).toHaveCount(0)
   })
 
   test('a mocked NDJSON build ends without leaving a panel behind', async ({ page, mockApi }) => {
+    let built = false
     await mockApi({
       ...VECTOR_ROUTES,
-      'POST /api/build-vectors': {
-        ndjson: [
-          { status: 'progress', stage: 'download', progress: 5, message: 'a' },
-          { status: 'progress', stage: 'load', progress: 20, message: 'b' },
-          { status: 'progress', stage: 'process', progress: 60, message: 'c' },
-          { status: 'success', document_count: 120 },
-        ],
+      '/api/pipeline/status': statusRoute(() => built),
+      'POST /api/build-vectors': () => {
+        built = true
+        return {
+          ndjson: [
+            { status: 'progress', stage: 'download', progress: 5, message: 'a' },
+            { status: 'progress', stage: 'load', progress: 20, message: 'b' },
+            { status: 'progress', stage: 'process', progress: 60, message: 'c' },
+            { status: 'success', document_count: 120 },
+          ],
+        }
       },
     })
     await page.goto('/pipeline-demo?step=vectors')

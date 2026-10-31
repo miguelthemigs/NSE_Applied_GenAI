@@ -2,21 +2,25 @@ import { useEffect, useState } from 'react';
 import { useNdjsonStream } from '../hooks/useNdjsonStream';
 import { apiUrl, postJson } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
-import Icon from './Icon';
 import GateReason from './pipeline/GateReason';
 import ProgressPanel from './pipeline/ProgressPanel';
+import DoneCard from './pipeline/DoneCard';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
+import { DONE_CARD_STATES } from '../utils/doneMessage';
 
 const DEFAULT_RERANKER = 'zeroentropy/zerank-2-reranker';
 
 export default function ThemeReranker({ onNavigate }) {
-  const { t, formatNumber } = useI18n();
+  const { t } = useI18n();
   const stream = useNdjsonStream();
   const { status: pipeline, refresh } = usePipelineStatus();
   const view = deriveStepView(pipeline, 'rerank');
   const vectorsAt = pipeline?.steps?.vectors?.completed_at;
+  const rerank = pipeline?.steps?.rerank;
   const [status, setStatus] = useState(null);
+  // True while the user sets up a new run (or reads its error) instead of the Done card.
+  const [rerunning, setRerunning] = useState(false);
   const [skipping, setSkipping] = useState(false);
   const [skipError, setSkipError] = useState(null);
   const [rerankerModel, setRerankerModel] = useState(DEFAULT_RERANKER);
@@ -59,6 +63,7 @@ export default function ThemeReranker({ onNavigate }) {
 
   const handleRerank = async () => {
     setLoading(true);
+    setRerunning(true);
     setProgress(0);
     setCurrentStage('');
     setLogs([]);
@@ -85,9 +90,9 @@ export default function ThemeReranker({ onNavigate }) {
             if (data.stage) setCurrentStage(data.stage);
             if (data.message) setLogs(prev => [...prev, data.message]);
           } else if (data.status === 'success') {
-            setResult(data);
             setProgress(100);
             setCurrentStage('save');
+            setRerunning(false);
           } else if (data.status === 'error') {
             setResult({ error: data.error });
           }
@@ -103,6 +108,7 @@ export default function ThemeReranker({ onNavigate }) {
 
   const vectorReady = !view.blockedBy && Boolean(pipeline);
   const showSkip = !['done', 'skipped', 'stale'].includes(view.state);
+  const showDone = DONE_CARD_STATES.has(view.state) && !loading && !rerunning;
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 p-6 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100">
@@ -118,7 +124,28 @@ export default function ThemeReranker({ onNavigate }) {
         </div>
       </div>
 
-      {!loading && !result && (
+      {showDone && (
+        <DoneCard
+          stepId="rerank"
+          stepView={view}
+          summary={rerank?.summary}
+          completedAt={rerank?.completed_at}
+          onContinue={() => onNavigate?.('insights')}
+          onRunAgain={() => { setResult(null); setRerunning(true); }}
+        />
+      )}
+
+      {result?.error && !loading && (
+        <div role="alert" className="p-5 rounded-2xl bg-error-container text-on-error-container">
+          <p className="m-0 font-bold">{t('rerank.failed')}</p>
+          <details className="mt-1 text-sm">
+            <summary className="cursor-pointer">{t('action.details')}</summary>
+            <p className="mt-1 break-words">{result.error}</p>
+          </details>
+        </div>
+      )}
+
+      {!loading && !showDone && (
         <div className="space-y-6">
           {vectorReady && (
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
@@ -208,51 +235,6 @@ export default function ThemeReranker({ onNavigate }) {
 
       {loading && <ProgressPanel stage={currentStage} progress={progress} logs={logs} />}
 
-      {result && !loading && (
-        <div className={`p-6 rounded-2xl ${result.error ? 'bg-red-50 border border-red-100' : 'bg-emerald-50 border border-emerald-100'}`}>
-          <h4 className={`text-lg font-bold ${result.error ? 'text-red-900' : 'text-emerald-900'}`}>
-            {result.error ? t('rerank.failed') : t('state.done')}
-          </h4>
-          {result.error ? (
-            <details className="mt-2 text-sm text-red-700">
-              <summary className="cursor-pointer">{t('action.details')}</summary>
-              <p className="mt-1 break-words">{result.error}</p>
-            </details>
-          ) : (
-            <>
-              <p className="mt-1 text-emerald-700">
-                {t('done.rerank', {
-                  checked: formatNumber(result.reranked_documents ?? 0),
-                  changed: formatNumber(result.changed_primary ?? 0),
-                  lowinfo: formatNumber(result.low_information_reassigned ?? 0),
-                })}
-              </p>
-              <div className="mt-6 grid md:grid-cols-3 gap-4">
-                <div className="bg-white/60 p-4 rounded-xl">
-                  <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">{t('rerank.done.reread')}</p>
-                  <p className="text-2xl font-black text-emerald-700 mt-1">{result.reranked_documents}</p>
-                </div>
-                <div className="bg-white/60 p-4 rounded-xl">
-                  <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">{t('rerank.done.changed')}</p>
-                  <p className="text-2xl font-black text-emerald-700 mt-1">{result.changed_primary}</p>
-                </div>
-                <div className="bg-white/60 p-4 rounded-xl">
-                  <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">{t('rerank.done.lowinfo')}</p>
-                  <p className="text-2xl font-black text-emerald-700 mt-1">{result.low_information_reassigned}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => onNavigate?.('insights')}
-                className="mt-6 inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold hover:bg-primary-container"
-              >
-                {t('action.continue', { n: 4 })}
-                <Icon name="arrow_forward" className="text-[18px]" />
-              </button>
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }

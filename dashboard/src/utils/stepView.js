@@ -9,6 +9,9 @@ const SETTLED = new Set(['done', 'skipped', 'ready'])
 
 const STEP_BY_ID = Object.fromEntries(PIPELINE_STEPS.map((s) => [s.id, s]))
 
+/** True when a step in this state lets the next steps start (and "Continue" go on). */
+export const isMet = (state) => MET.has(state)
+
 function stateOf(status, stepId) {
   if (status?.active_job?.step === stepId) return 'in_progress'
   return status?.steps?.[stepId]?.state ?? 'not_started'

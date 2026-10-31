@@ -97,6 +97,8 @@ test.describe('stepper and soft gating', () => {
     })
     await page.goto('/pipeline-demo?step=vectors')
     const vectors = page.locator('#step-panel-vectors')
+    // step 2 is already done, so its Done card shows first; "Run again" opens the settings
+    await vectors.getByRole('button', { name: 'Opnieuw uitvoeren' }).click()
     await vectors.getByRole('button', { name: STEP_NAMES[1], exact: true }).click()
     await expect(vectors.getByText('Bezig…').first()).toBeVisible()
 

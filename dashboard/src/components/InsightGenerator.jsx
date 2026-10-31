@@ -6,8 +6,54 @@ import { useI18n } from '../i18n/I18nProvider';
 import Icon from './Icon';
 import GateReason from './pipeline/GateReason';
 import ProgressPanel from './pipeline/ProgressPanel';
+import DoneCard from './pipeline/DoneCard';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
+import { DONE_CARD_STATES } from '../utils/doneMessage';
+
+const PILL = {
+  done: 'bg-success-container text-success',
+  partial: 'bg-primary-fixed text-primary',
+  not_started: 'bg-surface-container-low text-on-surface-variant',
+  off: 'bg-surface-container-lowest text-outline border border-dashed border-outline-variant',
+};
+
+// Placeholder for the step 4 results list (main themes, sub-themes, per
+// year/location/programme) until the full ResultsList replaces it.
+function ResultsPlaceholder({ summary }) {
+  const { t, formatNumber } = useI18n();
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const done = num(summary?.themes_done);
+  const total = num(summary?.themes_total);
+  const sub = num(summary?.subthemes_done);
+  const fDone = num(summary?.filtered_done);
+  const fTotal = num(summary?.filtered_total);
+  const progressState = (x, y) => (y > 0 && x >= y ? 'done' : x > 0 ? 'partial' : 'not_started');
+  const rows = [
+    { key: 'main', count: `${formatNumber(done)} / ${formatNumber(total)}`, state: progressState(done, total), vars: { x: done, y: total } },
+    { key: 'sub', count: formatNumber(sub), state: sub > 0 ? 'done' : 'not_started' },
+    {
+      key: 'filtered',
+      count: fTotal > 0 ? `${formatNumber(fDone)} / ${formatNumber(fTotal)}` : '—',
+      state: fTotal > 0 ? progressState(fDone, fTotal) : 'off',
+      vars: { x: fDone, y: fTotal },
+    },
+  ];
+  return (
+    <div className="flex flex-col gap-2.5">
+      <h3 className="m-0 text-base font-bold text-on-surface">{t('insights.results')}</h3>
+      <ul className="m-0 p-0 list-none border border-outline-variant rounded-xl overflow-hidden">
+        {rows.map((row) => (
+          <li key={row.key} className="flex flex-wrap items-center gap-3 px-4 py-3.5 border-b border-surface-container-highest last:border-b-0">
+            <span className="flex-[1_1_220px] font-semibold text-on-surface">{t('insights.row.' + row.key)}</span>
+            <span className="min-w-[60px] tabular-nums text-on-surface-variant">{row.count}</span>
+            <span className={`text-[13px] font-semibold px-3 py-1 rounded-full ${PILL[row.state]}`}>{t('state.' + row.state, row.vars)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function CacheBadge({ cached, total }) {
   const { t } = useI18n();
@@ -34,6 +80,7 @@ export default function InsightGenerator({ onNavigate }) {
   const { status, refresh } = usePipelineStatus();
   const view = deriveStepView(status, 'insights');
   const vectorsAt = status?.steps?.vectors?.completed_at;
+  const insights = status?.steps?.insights;
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -43,7 +90,8 @@ export default function InsightGenerator({ onNavigate }) {
   const [logs, setLogs] = useState([]);
   const [currentStage, setCurrentStage] = useState('');
   const [generating, setGenerating] = useState(false);
-  const [completedRun, setCompletedRun] = useState(null);
+  // True while the user sets up a new run (or reads why it stopped) instead of the Done card.
+  const [rerunning, setRerunning] = useState(false);
 
   // Configuration
   const [selectedModel, setSelectedModel] = useState('unsloth/gemma-4-12B-it-qat-GGUF:UD-Q4_K_XL');
@@ -87,7 +135,6 @@ export default function InsightGenerator({ onNavigate }) {
   };
 
   useEffect(() => { refreshCacheStatus(); }, []);
-  useEffect(() => { if (progress === 100) refreshCacheStatus(); }, [progress]);
 
   const activationRequestRef = useRef(0);
 
@@ -195,7 +242,7 @@ export default function InsightGenerator({ onNavigate }) {
 
   const launchPrecompute = async ({ endpoint, useFilterGrid, label }) => {
     setGenerating(true);
-    setCompletedRun(null);
+    setRerunning(true);
     setCurrentStage('');
     setLogs([{ kind: 'info', text: t('ins.log.start', { label: t(label), model: activeModel?.name || selectedModel }) }]);
     setProgress(0);
@@ -242,8 +289,10 @@ export default function InsightGenerator({ onNavigate }) {
           if (data.message) setLogs(prev => [...prev, { kind: 'info', text: `${prefix}${data.message}` }]);
         } else if (data.status === 'success') {
           completed = true;
-          setProgress(100);
-          setCompletedRun({ endpoint, label });
+          // The Done card (from the refreshed status) takes over from the progress panel.
+          setProgress(0);
+          setRerunning(false);
+          refreshCacheStatus();
           if (data.message) setLogs(prev => [...prev, { kind: 'ok', text: data.message }]);
           setGenerating(false);
         } else if (data.status === 'error') {
@@ -279,6 +328,7 @@ export default function InsightGenerator({ onNavigate }) {
   };
 
   const activeModel = AVAILABLE_LLM_MODELS.find(m => m.id === selectedModel);
+  const showDone = DONE_CARD_STATES.has(view.state) && !generating && !rerunning;
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 p-6 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100 transition-all duration-500">
@@ -296,8 +346,20 @@ export default function InsightGenerator({ onNavigate }) {
         </div>
       </div>
 
+      {showDone && (
+        <DoneCard
+          stepId="insights"
+          stepView={view}
+          summary={insights?.summary}
+          completedAt={insights?.completed_at}
+          onRunAgain={() => setRerunning(true)}
+        >
+          <ResultsPlaceholder summary={insights?.summary} />
+        </DoneCard>
+      )}
+
       {/* --- CONFIGURATION --- */}
-      {!generating && progress === 0 && (
+      {!generating && progress === 0 && !showDone && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
           <div className="grid md:grid-cols-2 gap-6">
@@ -574,34 +636,6 @@ export default function InsightGenerator({ onNavigate }) {
               </button>
             </div>
           )}
-        </div>
-      )}
-
-      {/* --- DONE STATE --- */}
-      {!generating && progress === 100 && (
-        <div className="p-6 bg-emerald-50 border border-emerald-100 rounded-2xl animate-in fade-in slide-in-from-bottom-4">
-          <div className="flex items-start gap-4">
-            <div className="p-3 bg-emerald-100 text-emerald-600 rounded-full">
-              <Icon name="check_circle" className="text-2xl" />
-            </div>
-            <div>
-              <h4 className="text-lg font-bold text-emerald-900">{t('ins.done.title', { label: completedRun?.label ? t(completedRun.label) : t('step.insights') })}</h4>
-              <p className="text-emerald-700 mt-1">
-                {completedRun?.endpoint === '/api/precompute-subthemes'
-                  ? t('ins.done.sub')
-                  : t('ins.done.main')}
-              </p>
-              <p className="text-xs text-emerald-600 mt-2">{t('ins.model.used', { name: activeModel?.name })}</p>
-              <button
-                type="button"
-                onClick={() => onNavigate?.('query')}
-                className="mt-4 inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold hover:bg-primary-container"
-              >
-                {t('action.continue', { n: 5 })}
-                <Icon name="arrow_forward" className="text-[18px]" />
-              </button>
-            </div>
-          </div>
         </div>
       )}
 

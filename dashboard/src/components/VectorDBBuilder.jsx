@@ -5,8 +5,10 @@ import { useI18n } from '../i18n/I18nProvider';
 import Icon from './Icon';
 import GateReason from './pipeline/GateReason';
 import ProgressPanel from './pipeline/ProgressPanel';
+import DoneCard from './pipeline/DoneCard';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
+import { DONE_CARD_STATES } from '../utils/doneMessage';
 
 const AVAILABLE_MODELS = [
   {
@@ -35,7 +37,10 @@ export default function VectorDBBuilder({ onNavigate }) {
   const { status, refresh } = usePipelineStatus();
   const view = deriveStepView(status, 'vectors');
   const anonymizedAt = status?.steps?.anonymize?.completed_at;
+  const vectors = status?.steps?.vectors;
   const [loading, setLoading] = useState(false);
+  // True while the user sets up a new build (or reads its error) instead of the Done card.
+  const [rerunning, setRerunning] = useState(false);
   const [result, setResult] = useState(null);
   const [progress, setProgress] = useState(0);
   const [currentStage, setCurrentStage] = useState('');
@@ -96,6 +101,7 @@ export default function VectorDBBuilder({ onNavigate }) {
     if (cols.length === 0) return;
 
     setLoading(true);
+    setRerunning(true);
     setProgress(0);
     setCurrentStage('');
     setLogs([]);
@@ -121,9 +127,9 @@ export default function VectorDBBuilder({ onNavigate }) {
             if (data.message) setLogs(prev => [...prev, data.message]);
             if (data.current_doc) setCurrentDoc(data.current_doc);
           } else if (data.status === 'success') {
-            setResult(data);
             setProgress(100);
             setCurrentStage('save');
+            setRerunning(false);
           } else if (data.status === 'error') {
             setResult({ error: data.error });
             if (data.error) setLogs(prev => [...prev, data.error]);
@@ -140,6 +146,7 @@ export default function VectorDBBuilder({ onNavigate }) {
   };
 
   const activeModel = AVAILABLE_MODELS.find(m => m.id === selectedModel);
+  const showDone = DONE_CARD_STATES.has(view.state) && !loading && !rerunning;
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 p-6 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100 transition-all duration-500">
@@ -155,8 +162,33 @@ export default function VectorDBBuilder({ onNavigate }) {
         </div>
       </div>
 
+      {showDone && (
+        <DoneCard
+          stepId="vectors"
+          stepView={view}
+          summary={vectors?.summary}
+          completedAt={vectors?.completed_at}
+          onContinue={() => onNavigate?.('rerank')}
+          onRunAgain={() => { setResult(null); setRerunning(true); }}
+        />
+      )}
+
+      {/* --- ERROR --- */}
+      {result?.error && !loading && (
+        <div role="alert" className="p-5 rounded-2xl bg-error-container text-on-error-container flex items-start gap-3">
+          <Icon name="error" className="text-2xl shrink-0" />
+          <div className="min-w-0">
+            <p className="m-0 font-bold">{t('state.error')}</p>
+            <details className="mt-1 text-sm">
+              <summary className="cursor-pointer">{t('action.details')}</summary>
+              <p className="mt-1 break-words">{result.error}</p>
+            </details>
+          </div>
+        </div>
+      )}
+
       {/* --- CONFIGURATION PANEL --- */}
-      {!loading && !result && (
+      {!loading && !showDone && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
 
           {vectorCheckpoint && (
@@ -300,51 +332,6 @@ export default function VectorDBBuilder({ onNavigate }) {
         <ProgressPanel stage={currentStage} progress={progress} logs={currentDoc ? [...logs, currentDoc] : logs} />
       )}
 
-      {/* --- RESULT --- */}
-      {result && !loading && (
-        <div className={`p-6 rounded-2xl animate-in fade-in slide-in-from-bottom-4 ${result.error ? 'bg-red-50 border border-red-100' : 'bg-emerald-50 border border-emerald-100'}`}>
-          <div className="flex items-start gap-4">
-            <div className={`p-3 rounded-full ${result.error ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
-              <Icon name={result.error ? 'error' : 'check_circle'} className="text-2xl" />
-            </div>
-            <div className="flex-1">
-              <h4 className={`text-lg font-bold ${result.error ? 'text-red-900' : 'text-emerald-900'}`}>
-                {result.error ? t('state.error') : t('state.done')}
-              </h4>
-              {result.error ? (
-                <details className="mt-2 text-sm text-red-700">
-                  <summary className="cursor-pointer">{t('action.details')}</summary>
-                  <p className="mt-1 break-words">{result.error}</p>
-                </details>
-              ) : (
-                <>
-                  <p className="mt-1 text-emerald-700">
-                    {t('done.vectors', { docs: formatNumber(result.document_count ?? 0), tier: activeModel?.name || selectedModel })}
-                  </p>
-                  <div className="mt-6 grid grid-cols-2 gap-4">
-                    <div className="bg-white/60 p-4 rounded-xl">
-                      <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">{t('common.answers')}</p>
-                      <p className="text-3xl font-black text-emerald-700 mt-1">{result.document_count}</p>
-                    </div>
-                    <div className="bg-white/60 p-4 rounded-xl">
-                      <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">{t('common.model')}</p>
-                      <p className="text-lg font-black text-emerald-700 mt-1">{activeModel?.name || selectedModel}</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onNavigate?.('rerank')}
-                    className="mt-6 inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold hover:bg-primary-container"
-                  >
-                    {t('action.continue', { n: 3 })}
-                    <Icon name="arrow_forward" className="text-[18px]" />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

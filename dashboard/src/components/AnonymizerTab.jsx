@@ -1,22 +1,94 @@
 import { useState, useEffect } from 'react';
 import { useNdjsonStream } from '../hooks/useNdjsonStream';
-import { apiUrl } from '../services/api';
+import { apiUrl, getJson } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import Icon from './Icon';
 import GateReason from './pipeline/GateReason';
 import ProgressPanel from './pipeline/ProgressPanel';
+import DoneCard from './pipeline/DoneCard';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
-import { deriveStepView } from '../utils/stepView';
+import { deriveStepView, isMet } from '../utils/stepView';
+import { continueHintKey, DONE_CARD_STATES } from '../utils/doneMessage';
 
 // Step 1 states in which an anonymised file exists on disk.
-const HAS_OUTPUT = new Set(['done', 'needs_review', 'unverified', 'stale']);
+const HAS_OUTPUT = DONE_CARD_STATES;
+const MASK_KEYS = ['NAME', 'LOCATION', 'PII', 'TITLE', 'HEALTH'];
+
+/**
+ * The possibly-missed text of the current report, shown inside the Done card's
+ * review box. Never collapsed: the user must see it before acknowledging.
+ */
+function MissedList({ report, review }) {
+  const { t, formatNumber } = useI18n();
+  if (!(Number(review) > 0)) return null;
+  const keys = MASK_KEYS.filter((k) => (report?.missed_counts?.[k] ?? 0) > 0);
+  if (keys.length === 0) return <p className="m-0 text-sm text-on-surface-variant">{t('anon.samples.none')}</p>;
+  return (
+    <ul className="m-0 p-0 list-none flex flex-col gap-2">
+      {keys.map((k) => {
+        const samples = report.missed_samples?.[k] ?? [];
+        return (
+          <li key={k} className="bg-surface-container-lowest rounded-xl px-3.5 py-3 flex flex-col gap-1.5">
+            <span className="text-xs font-semibold text-on-surface-variant">
+              {t('anon.mask.' + k)} · {t('anon.count.missed', { n: formatNumber(report.missed_counts[k]) })}
+            </span>
+            {samples.length > 0 ? (
+              <span className="flex flex-wrap gap-2">
+                {samples.map((sample, i) => (
+                  <mark key={i} className="px-1.5 py-0.5 rounded-lg bg-warning-container text-on-surface text-sm font-mono break-all">{sample}</mark>
+                ))}
+              </span>
+            ) : (
+              <span className="text-sm text-on-surface-variant">{t('anon.samples.none')}</span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** What was removed, per kind of personal detail (collapsed). */
+function RemovedDetails({ report }) {
+  const { t, formatNumber } = useI18n();
+  const keys = MASK_KEYS.filter((k) => (report?.tag_counts?.[k] ?? 0) > 0);
+  if (keys.length === 0) return null;
+  return (
+    <details className="border border-outline-variant rounded-xl">
+      <summary className="px-4 py-3.5 font-semibold text-primary cursor-pointer">{t('done.removed.title')}</summary>
+      <ul className="m-0 px-4 pb-4 list-none flex flex-col gap-3">
+        {keys.map((k) => {
+          const samples = report.removed_samples?.[k] ?? [];
+          return (
+            <li key={k} className="flex flex-col gap-1.5">
+              <span className="text-sm font-semibold text-on-surface">
+                {t('anon.mask.' + k)} · {t('anon.count.removed', { n: formatNumber(report.tag_counts[k]) })}
+              </span>
+              {samples.length > 0 && (
+                <span className="flex flex-wrap gap-2">
+                  {samples.map((sample, i) => (
+                    <span key={i} className="px-2 py-0.5 rounded-lg bg-surface-container-low text-on-surface-variant text-sm font-mono break-all">{sample}</span>
+                  ))}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
 
 export default function AnonymizerTab({ onNavigate }) {
   const { t, formatNumber, formatDate } = useI18n();
   const stream = useNdjsonStream();
   const { status, refresh } = usePipelineStatus();
   const view = deriveStepView(status, 'anonymize');
-  const existingAnonymized = HAS_OUTPUT.has(status?.steps?.anonymize?.state);
+  const anon = status?.steps?.anonymize;
+  const anonState = anon?.state;
+  const reportId = anon?.summary?.report_id ?? null;
+  const existingAnonymized = HAS_OUTPUT.has(anonState);
+  const continueHint = continueHintKey(anonState);
   const [file, setFile] = useState(null);
   const [columns, setColumns] = useState([]);
   const [selectedColumns, setSelectedColumns] = useState([]);
@@ -26,9 +98,10 @@ export default function AnonymizerTab({ onNavigate }) {
   const [result, setResult] = useState(null);
   const [preview, setPreview] = useState([]);
   const [progress, setProgress] = useState(0);
-  const [showStats, setShowStats] = useState(true);
   const [runVerification, setRunVerification] = useState(true);
-  const [expandedCategory, setExpandedCategory] = useState(null);
+  // True while the user is setting up a new run (or looking at its error)
+  // instead of the Done card of the current output.
+  const [rerunning, setRerunning] = useState(false);
   const [blocklist, setBlocklist] = useState([]);
   const [blocklistInput, setBlocklistInput] = useState('');
 
@@ -45,15 +118,23 @@ export default function AnonymizerTab({ onNavigate }) {
       .then(r => r.json())
       .then(data => { if (data.has_checkpoint) setCheckpoint(data); })
       .catch(() => {});
-    fetch(apiUrl('/api/anonymize-report'))
-      .then(r => r.json())
-      .then(data => { if (data.has_report) setLastReport(data); })
-      .catch(() => {});
     fetch(apiUrl('/api/word-blocklist'))
       .then(r => r.json())
       .then(data => { if (Array.isArray(data.words)) setBlocklist(data.words); })
       .catch(() => {});
   }, []);
+
+  // The report behind the Done card (missed / removed text). Fetched again
+  // whenever the status names a different report, so the list the user
+  // acknowledges is always the one the backend will record the tick for.
+  useEffect(() => {
+    let cancelled = false;
+    getJson('/api/anonymize-report')
+      .then(({ data }) => { if (!cancelled) setLastReport(data?.has_report ? data : null); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [reportId]);
+  const currentReport = lastReport && (lastReport.timestamp == null || !reportId || lastReport.timestamp === reportId) ? lastReport : null;
 
   const saveBlocklist = (updatedWords) => {
     fetch(apiUrl('/api/word-blocklist'), {
@@ -84,31 +165,27 @@ export default function AnonymizerTab({ onNavigate }) {
     saveBlocklist(updated);
   };
 
-  const loadLastReport = () => {
-    if (!lastReport) return;
-    setResult({
-      rows_processed: lastReport.rows_processed,
-      columns_anonymized: lastReport.columns,
-      stats: {
-        total_cells: lastReport.total_cells,
-        affected_cells: lastReport.affected_cells,
-        total_entities: lastReport.total_entities,
-        tag_counts: lastReport.tag_counts,
-        missed_counts: lastReport.missed_counts,
-        missed_samples: lastReport.missed_samples,
-        removed_samples: lastReport.removed_samples,
-        verification_skipped: lastReport.verification_skipped,
-      },
-    });
-    setShowStats(true);
-    setStep(3);
+  // Back to the Done card of the current output.
+  const showResults = () => {
+    setResult(null);
+    setRerunning(false);
   };
 
+  const runAgain = () => {
+    setResult(null);
+    setStep(1);
+    setRerunning(true);
+  };
+
+  // Re-runs the follow-up check on the existing anonymised file.
   const runCheck = async () => {
     setLoading(true);
+    setRerunning(true);
+    setStep(3);
     setResult(null);
     setProgress(0);
     setCurrentStage('');
+    setLogs([]);
     let sawEvent = false;
     try {
       await stream.start('/api/run-anonymize-check', undefined, {
@@ -121,16 +198,8 @@ export default function AnonymizerTab({ onNavigate }) {
             if (data.progress !== undefined) setProgress(data.progress);
             if (data.stage) setCurrentStage(data.stage);
           } else if (data.status === 'success') {
-            setResult(data);
             setProgress(100);
-            setLastReport({
-              timestamp: new Date().toISOString(),
-              rows_processed: data.rows_processed,
-              total_entities: data.stats.total_entities,
-              ...data.stats,
-              columns: data.columns_anonymized,
-            });
-            setStep(3);
+            setRerunning(false);
           } else if (data.status === 'error') {
             setResult({ error: data.error });
           }
@@ -140,7 +209,6 @@ export default function AnonymizerTab({ onNavigate }) {
       setResult({ error: err.message });
     } finally {
       setLoading(false);
-      setShowStats(true);
       refresh();
     }
   };
@@ -240,6 +308,7 @@ export default function AnonymizerTab({ onNavigate }) {
     }
 
     setLoading(true);
+    setRerunning(true);
     setStep(3);
     setResult(null);
     setProgress(0);
@@ -267,8 +336,8 @@ export default function AnonymizerTab({ onNavigate }) {
             if (data.preview) setCurrentPreview(data.preview);
             if (data.checkpoint_saved && data.row) setLastCheckpointRow(`${data.column} (${data.row}/${data.total_rows})`);
           } else if (data.status === 'success') {
-            setResult(data);
             setProgress(100);
+            setRerunning(false);
           } else if (data.status === 'error') {
             setResult({ error: data.error });
           }
@@ -282,6 +351,8 @@ export default function AnonymizerTab({ onNavigate }) {
       refresh();
     }
   };
+
+  const showDone = existingAnonymized && !loading && !rerunning;
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 p-3 sm:p-6 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100 transition-all duration-500">
@@ -297,6 +368,20 @@ export default function AnonymizerTab({ onNavigate }) {
         </div>
       </div>
 
+      {showDone ? (
+        <DoneCard
+          stepId="anonymize"
+          stepView={view}
+          summary={anon?.summary}
+          completedAt={anon?.completed_at}
+          onContinue={() => onNavigate?.('vectors')}
+          onRunAgain={runAgain}
+          onRunCheck={runCheck}
+          details={<RemovedDetails report={currentReport} />}
+        >
+          <MissedList report={currentReport} review={anon?.summary?.review} />
+        </DoneCard>
+      ) : (
       <div className="relative">
         {/* Step Indicator */}
         <div className="flex items-center justify-between mb-8 relative z-10">
@@ -350,7 +435,7 @@ export default function AnonymizerTab({ onNavigate }) {
                 </div>
               </div>
             )}
-            {lastReport && (
+            {lastReport && existingAnonymized && (
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-slate-100 rounded-xl shrink-0">
@@ -362,7 +447,7 @@ export default function AnonymizerTab({ onNavigate }) {
                   </div>
                 </div>
                 <button
-                  onClick={loadLastReport}
+                  onClick={showResults}
                   className="px-4 py-2 bg-slate-700 text-white text-sm font-bold rounded-lg hover:bg-slate-800 transition-all shrink-0"
                 >
                   {t('anon.previous.view')}
@@ -410,24 +495,19 @@ export default function AnonymizerTab({ onNavigate }) {
                     >
                       {loading ? t('anon.check.running') : t('anon.check.run')}
                     </button>
+                    {/* Same gate as the Done card: not while step 1 needs review or is unverified. */}
                     <button
                       onClick={() => { if (typeof onNavigate === 'function') onNavigate('vectors'); }}
-                      className="px-4 py-2 bg-white text-indigo-600 text-sm font-bold rounded-lg shadow-sm hover:shadow-md transition-all ring-1 ring-indigo-200 hover:bg-indigo-50"
+                      disabled={!isMet(anonState)}
+                      aria-describedby={continueHint ? 'anon-existing-hint' : undefined}
+                      className="px-4 py-2 bg-white text-indigo-600 text-sm font-bold rounded-lg shadow-sm hover:shadow-md transition-all ring-1 ring-indigo-200 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-sm disabled:hover:bg-white"
                     >
                       {t('action.continue', { n: 2 })}
                     </button>
                   </div>
                 </div>
-                {loading && (
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs text-indigo-700 font-medium">
-                      <span>{currentStage ? t('stage.' + currentStage) : t('anon.check.starting')}</span>
-                      <span>{progress}%</span>
-                    </div>
-                    <div className="w-full bg-indigo-100 rounded-full h-1.5">
-                      <div className="bg-indigo-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
-                    </div>
-                  </div>
+                {continueHint && (
+                  <p id="anon-existing-hint" className="m-0 text-sm font-medium text-warning">{t(continueHint)}</p>
                 )}
               </div>
             )}
@@ -687,151 +767,31 @@ export default function AnonymizerTab({ onNavigate }) {
                       <p className="mt-1">{result.error}</p>
                     </details>
                   )}
-                </div>
-              </div>
-            )}
-
-            {showStats && result?.stats && !result?.error && (
-              <div className="p-6 bg-white border border-gray-100 rounded-2xl shadow-sm space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                  <div className="flex items-center gap-2">
-                    <Icon name="fact_check" className="text-xl text-gray-500" />
-                    <h3 className="font-bold text-gray-800">{t('anon.results.title')}</h3>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => { setResult(null); setStep(1); }}
+                      className="px-4 py-2 bg-white text-red-700 text-sm font-bold rounded-lg ring-1 ring-red-200 hover:bg-red-50"
+                    >
+                      {t('anon.back')}
+                    </button>
+                    {existingAnonymized && (
+                      <button
+                        type="button"
+                        onClick={showResults}
+                        className="px-4 py-2 bg-white text-red-700 text-sm font-bold rounded-lg ring-1 ring-red-200 hover:bg-red-50"
+                      >
+                        {t('anon.previous.view')}
+                      </button>
+                    )}
                   </div>
-                  {result.stats.verification_skipped
-                    ? <span className="text-xs font-bold text-slate-700 bg-slate-50 border border-slate-200 px-3 py-1 rounded-full">{t('state.unverified')}</span>
-                    : Object.values(result.stats.missed_counts ?? {}).every(v => v === 0)
-                    ? <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">{t('anon.allClear')}</span>
-                    : <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">{t('state.needs_review', { n: Object.values(result.stats.missed_counts ?? {}).reduce((a, v) => a + v, 0) })}</span>
-                  }
-                </div>
-
-                <div className="space-y-3">
-                  {MASKING_INFO.map(({ tag, key, color }) => {
-                    const removed        = result.stats.tag_counts[key] ?? 0;
-                    const missed         = result.stats.missed_counts?.[key] ?? 0;
-                    const missedSamples  = result.stats.missed_samples?.[key] ?? [];
-                    const removedSamples = result.stats.removed_samples?.[key] ?? [];
-                    const verificationSkipped = Boolean(result.stats.verification_skipped);
-                    const clean          = missed === 0;
-                    const removedOpen    = expandedCategory === `${key}-removed`;
-                    const missedOpen     = expandedCategory === `${key}-missed`;
-
-                    return (
-                      <div key={key} className={`rounded-xl border-2 overflow-hidden transition-colors ${
-                        !clean        ? 'border-amber-200'
-                        : removed > 0 ? `border-${color}-100`
-                        :               'border-gray-100'
-                      }`}>
-                        {/* Main row */}
-                        <div className={`w-full flex items-center justify-between p-4 ${
-                          !clean        ? 'bg-amber-50/40'
-                          : removed > 0 ? `bg-${color}-50/40`
-                          :               'bg-gray-50'
-                        }`}>
-                          <div className="flex items-center gap-3">
-                            <span className={`font-mono text-xs font-black px-2 py-1 rounded-md ${
-                              !clean        ? 'bg-amber-100 text-amber-700'
-                              : removed > 0 ? `bg-${color}-100 text-${color}-700`
-                              :               'bg-gray-100 text-gray-400'
-                            }`}>
-                              {tag}
-                            </span>
-                            <span className={`text-sm font-medium ${removed > 0 || !clean ? 'text-gray-700' : 'text-gray-400'}`}>
-                              {t('anon.mask.' + key)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-3 shrink-0 text-sm">
-                            {verificationSkipped ? (
-                              <span className={`font-bold ${removed > 0 ? `text-${color}-700` : 'text-gray-400'}`}>
-                                {t('anon.count.removed', { n: removed })}
-                              </span>
-                            ) : removed > 0 ? (
-                              <button
-                                type="button"
-                                onClick={() => setExpandedCategory(removedOpen ? null : `${key}-removed`)}
-                                className={`flex items-center gap-1.5 font-medium text-${color}-700 hover:underline cursor-pointer`}
-                              >
-                                {t('anon.count.removed', { n: removed })}
-                                <svg className={`w-4 h-4 transition-transform ${removedOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                </svg>
-                              </button>
-                            ) : null}
-                            {!clean ? (
-                              <button
-                                type="button"
-                                onClick={() => setExpandedCategory(missedOpen ? null : `${key}-missed`)}
-                                className="flex items-center gap-1.5 font-bold text-amber-700 hover:underline cursor-pointer"
-                              >
-                                <Icon name="warning" className="text-amber-500" />
-                                {t('anon.count.missed', { n: missed })}
-                                <svg className={`w-4 h-4 text-amber-500 transition-transform ${missedOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                </svg>
-                              </button>
-                            ) : removed > 0 ? (
-                              <Icon name="check_circle" filled className="text-emerald-500" />
-                            ) : (
-                              <span className="text-xs text-gray-400 italic">{t('anon.none')}</span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Removed samples panel */}
-                        {!verificationSkipped && removedOpen && (
-                          <div className={`border-t border-${color}-100 bg-white px-4 py-3 space-y-2`}>
-                            <p className={`text-xs font-bold text-${color}-700 uppercase tracking-wider mb-2`}>
-                              {t('anon.samples.removed', { n: removedSamples.length })}
-                            </p>
-                            {removedSamples.length > 0 ? (
-                              <div className="flex flex-wrap gap-2">
-                                {removedSamples.map((sample, i) => (
-                                  <span key={i} className={`inline-block px-3 py-1 bg-${color}-50 border border-${color}-200 text-${color}-800 text-sm font-mono rounded-lg`}>
-                                    {sample}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-xs text-gray-400 italic">{t('anon.samples.none')}</p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Missed samples panel */}
-                        {!verificationSkipped && missedOpen && (
-                          <div className="border-t border-amber-200 bg-white px-4 py-3 space-y-2">
-                            <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">
-                              {t('anon.samples.missed', { n: missedSamples.length })}
-                            </p>
-                            {missedSamples.length > 0 ? (
-                              <div className="flex flex-wrap gap-2">
-                                {missedSamples.map((sample, i) => (
-                                  <span key={i} className="inline-block px-3 py-1 bg-amber-50 border border-amber-200 text-amber-800 text-sm font-mono rounded-lg">
-                                    {sample}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-xs text-gray-400 italic">{t('anon.samples.none')}</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm text-gray-500">
-                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  {t(result.stats.verification_skipped ? 'anon.summary.skipped' : 'anon.summary', { cells: formatNumber(result.stats.total_cells ?? 0), n: formatNumber(result.stats.total_entities ?? 0) })}
                 </div>
               </div>
             )}
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

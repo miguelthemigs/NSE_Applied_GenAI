@@ -27,8 +27,9 @@ function AnimatedNumber({ value, label, icon, delay = 0 }) {
   )
 }
 
-export default function HeroBanner({ themes }) {
-  const { t, formatNumber } = useI18n()
+export default function HeroBanner({ themes, lastUpdated }) {
+  const { t, formatNumber, formatDate } = useI18n()
+  const updated = formatDate(lastUpdated)
   const totalComments = useMemo(() => {
     return themes.reduce((sum, th) => sum + (th.responseCount ?? th.percentage ?? 0), 0)
   }, [themes])
@@ -110,6 +111,16 @@ export default function HeroBanner({ themes }) {
             >
               {t('overview.lead', { n: themes.length })}
             </motion.p>
+            {updated && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.6 }}
+                className="text-xs text-white/60 mt-2"
+              >
+                {t('done.updated', { date: updated })}
+              </motion.p>
+            )}
 
           </div>
 

@@ -46,6 +46,14 @@ export default function Overview() {
       .catch(e => console.error(e));
   }, []);
 
+  // "Last updated" in the hero comes from the pipeline status (max completed_at).
+  const [lastUpdated, setLastUpdated] = useState(null)
+  useEffect(() => {
+    getJson('/api/pipeline/status')
+      .then(({ data }) => { if (data?.status === 'success') setLastUpdated(data.last_updated ?? null) })
+      .catch(() => {})
+  }, [])
+
   const [availableFilterOptions, setAvailableFilterOptions] = useState(null);
   useEffect(() => {
     const apiFilters = filtersToApiParams(filters);
@@ -145,7 +153,7 @@ export default function Overview() {
     <main className="max-w-[1280px] mx-auto px-4 py-6 md:px-8 md:py-8 flex flex-col gap-6">
 
       {/* ── Hero Stats Banner ── */}
-      {overviewKind === 'ok' && <HeroBanner themes={displayThemes} />}
+      {overviewKind === 'ok' && <HeroBanner themes={displayThemes} lastUpdated={lastUpdated} />}
 
       {/* ── Filters bar ── */}
       <motion.div
