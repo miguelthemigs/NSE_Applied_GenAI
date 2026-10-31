@@ -12,6 +12,7 @@ const shortTier = (label) => label.replace(/\s*\(.*\)\s*$/, '')
  * Light progress card shared by all four steps. Render it only while a run is active.
  * `download` is {bytesDone, bytesTotal, tierKey, etaSeconds?}; bytesTotal null means unknown size,
  * tierKey null means a model outside the tiers (the reranker, an Advanced id).
+ * `logs` holds strings or {kind, text}; kind 'error' lines stand out inside Details.
  */
 export default function ProgressPanel({ stage, progress = 0, etaSeconds, logs = [], download }) {
   const { t, formatBytes } = useI18n()
@@ -74,7 +75,12 @@ export default function ProgressPanel({ stage, progress = 0, etaSeconds, logs = 
 
         <details>
           <summary className="text-primary font-semibold cursor-pointer min-h-[44px] flex items-center">{t('action.details')}</summary>
-          <pre className="m-0 mt-2 bg-surface-container-low text-on-surface-variant rounded-lg p-3 text-xs font-mono whitespace-pre-wrap break-words max-h-56 overflow-y-auto">{logs.join('\n')}</pre>
+          <pre className="m-0 mt-2 bg-surface-container-low text-on-surface-variant rounded-lg p-3 text-xs font-mono whitespace-pre-wrap break-words max-h-56 overflow-y-auto">
+            {logs.map((line, i) => {
+              const { kind, text } = typeof line === 'string' ? { kind: 'info', text: line } : line
+              return <span key={i} data-kind={kind} className={`block ${kind === 'error' ? 'text-error font-semibold' : ''}`}>{text}</span>
+            })}
+          </pre>
         </details>
       </div>
     </div>

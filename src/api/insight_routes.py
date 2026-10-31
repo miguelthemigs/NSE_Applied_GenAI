@@ -149,7 +149,8 @@ def precompute_insights():
     return Response(
         _tracked_insights(generation.precompute_insights_stream(
             themes=themes,
-            llm_model=data.get("llm_model") or settings.DEFAULT_LLM_MODEL,
+            # The step 4 button sends model_id, like start-stream; llm_model stays accepted.
+            llm_model=data.get("model_id") or data.get("llm_model") or settings.DEFAULT_LLM_MODEL,
             allow_model_download=bool(data.get("allow_model_download", False)),
             provider=data.get("provider", settings.DEFAULT_LLM_PROVIDER),
             filters=_filters_from_payload(data),

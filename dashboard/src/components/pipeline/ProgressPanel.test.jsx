@@ -59,6 +59,16 @@ describe('ProgressPanel', () => {
     expect(screen.getByText('Het model wordt gedownload… Dit gebeurt maar één keer.')).toBeInTheDocument()
   })
 
+  it('keeps a kind per log line and makes error lines stand out', () => {
+    wrap(<ProgressPanel stage="process" progress={5} logs={['plain line', { kind: 'info', text: 'info line' }, { kind: 'error', text: 'Niet gelukt: boom' }]} />)
+    expect(screen.getByText('plain line')).toHaveAttribute('data-kind', 'info')
+    expect(screen.getByText('info line')).not.toHaveClass('text-error')
+    const error = screen.getByText('Niet gelukt: boom')
+    expect(error).toHaveAttribute('data-kind', 'error')
+    expect(error).toHaveClass('text-error')
+    expect(error.closest('details')).not.toBeNull()
+  })
+
   it('shows an ETA only when one is supplied', () => {
     const { rerender } = wrap(<ProgressPanel stage="process" progress={40} logs={[]} />)
     expect(screen.queryByText(/nog ongeveer/)).not.toBeInTheDocument()

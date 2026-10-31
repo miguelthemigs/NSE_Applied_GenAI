@@ -141,8 +141,7 @@ const STEP_ROUTES = {
   ...PIPELINE_ROUTES,
   '/api/inspect-anonymized': { status: 'success', text_columns: ['Open antwoord'], row_count: 120 },
   '/api/vector-checkpoint-status': { has_checkpoint: true, processed_count: 40, total_docs: 120, embedding_model: 'Octen/Octen-Embedding-0.6B', selected_columns: ['Open antwoord'] },
-  '/api/cache-status': { main_baseline: 7, main_filtered: 0, subtheme_baseline: 3, subtheme_filtered: 0 },
-  '/api/vector-stats': { total_documents: 120 },
+  '/api/insights/results': { rows: [{ kind: 'main', done: 7, total: 7, state: 'done' }, { kind: 'sub', done: 3, total: null, state: 'done' }, { kind: 'filtered', done: 0, total: 0, state: 'off' }], estimate: null },
   '/api/filter-options': { status: 'success', options: { institutions: ['Fontys'], academic_years: ['2024'], locations: ['Eindhoven'], programmes: ['ICT'], study_modes: ['Voltijd'], cohorts: ['2023'], languages: ['Nederlands'] } },
 }
 

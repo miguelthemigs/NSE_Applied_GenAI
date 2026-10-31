@@ -193,7 +193,7 @@ test.describe('done cards and the review gate', () => {
       '/api/inspect-anonymized': { status: 'success', text_columns: ['Open antwoord'], row_count: 120 },
       '/api/vector-checkpoint-status': { has_checkpoint: false },
       '/api/status': { status: 'success' },
-      '/api/cache-status': { main_baseline: 7, main_filtered: 0, subtheme_baseline: 0, subtheme_filtered: 0 },
+      '/api/insights/results': { rows: [{ kind: 'main', done: 7, total: 7, state: 'done' }, { kind: 'sub', done: 31, total: null, state: 'done' }, { kind: 'filtered', done: 0, total: 0, state: 'off' }], estimate: null },
     })
     for (const id of ['vectors', 'rerank', 'insights']) {
       await page.goto(`/pipeline-demo?step=${id}`)
@@ -210,17 +210,15 @@ test.describe('done cards and the review gate', () => {
     partial.steps.insights.summary.themes_done = 3
     await mockApi({
       '/api/pipeline/status': partial,
-      '/api/cache-status': { main_baseline: 3, main_filtered: 0, subtheme_baseline: 0, subtheme_filtered: 0 },
-      '/api/vector-stats': { total_documents: 120 },
-      '/api/filter-options': { status: 'success', options: {} },
       'POST /api/llm-models/start-stream': { ndjson: [{ status: 'progress', stage: 'load' }, { status: 'success' }] },
       'POST /api/precompute-insights': { ndjson: [{ status: 'progress', progress: 50, stage: 'process' }, { status: 'success' }] },
     })
     await page.goto('/pipeline-demo?step=insights')
     const p = page.locator('#step-panel-insights')
-    await p.getByRole('button', { name: /Thema's samenvatten/ }).click()
-    await expect(p.getByText("Thema's: klaar")).toBeVisible()
-    await expect(p.getByText('De samenvattingen staan klaar voor het Overzicht.')).toBeVisible()
+    await p.getByRole('button', { name: 'Samenvattingen schrijven' }).click()
+    const confirmation = p.getByRole('status').filter({ hasText: 'De samenvattingen staan klaar voor het Overzicht.' })
+    await expect(confirmation).toBeVisible()
+    await expect(confirmation).toContainText('Klaar')
   })
 
   test('all done: done cards on steps 2 to 4; step 4 opens the Overview', async ({ page, mockApi }) => {
@@ -229,7 +227,7 @@ test.describe('done cards and the review gate', () => {
       '/api/inspect-anonymized': { status: 'success', text_columns: ['Open antwoord'], row_count: 120 },
       '/api/vector-checkpoint-status': { has_checkpoint: false },
       '/api/status': { status: 'success' },
-      '/api/cache-status': { main_baseline: 7, main_filtered: 0, subtheme_baseline: 0, subtheme_filtered: 0 },
+      '/api/insights/results': { rows: [{ kind: 'main', done: 7, total: 7, state: 'done' }, { kind: 'sub', done: 31, total: null, state: 'done' }, { kind: 'filtered', done: 0, total: 0, state: 'off' }], estimate: null },
     })
     await page.goto('/pipeline-demo?step=vectors')
     await expect(page.locator('#step-panel-vectors').getByText('Klaar. 900 antwoorden zijn doorzoekbaar (model: Gebalanceerd).')).toBeVisible()

@@ -140,6 +140,17 @@ class RouteBehaviourTests(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual([t["name"] for t in stream.call_args.kwargs["themes"]], THEMES_LIST)
 
+    def test_precompute_reads_model_id_like_start_stream(self):
+        with mock.patch.object(generation, "precompute_insights_stream", return_value=iter(["{}\n"])) as stream, \
+                mock.patch.object(insight_routes.state, "mark_completed"):
+            self.client.post("/api/precompute-insights", json={"model_id": "picked/tier", "max_documents": 240}).get_data()
+        self.assertEqual(stream.call_args.kwargs["llm_model"], "picked/tier")
+        self.assertEqual(stream.call_args.kwargs["max_documents"], 240)
+        with mock.patch.object(generation, "precompute_insights_stream", return_value=iter(["{}\n"])) as stream, \
+                mock.patch.object(insight_routes.state, "mark_completed"):
+            self.client.post("/api/precompute-insights", json={"llm_model": "legacy/id"}).get_data()
+        self.assertEqual(stream.call_args.kwargs["llm_model"], "legacy/id")
+
     def test_theme_summary_uses_running_server_model_else_default(self):
         with mock.patch.object(generation, "generate_theme_summary", return_value={"status": "ok"}) as gen, \
                 mock.patch.object(llm_clients.LlamaCppClient, "running_managed_model_id", return_value="running/model"):

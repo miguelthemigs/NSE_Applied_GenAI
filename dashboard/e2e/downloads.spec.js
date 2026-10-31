@@ -15,9 +15,7 @@ notStarted.steps.insights.summary = null
 
 const INSIGHT_ROUTES = {
   '/api/pipeline/status': notStarted,
-  '/api/cache-status': { main_baseline: 0, main_filtered: 0, subtheme_baseline: 0, subtheme_filtered: 0 },
-  '/api/vector-stats': { total_documents: 120 },
-  '/api/filter-options': { status: 'success', options: {} },
+  '/api/insights/results': { rows: [], estimate: null },
 }
 
 /**
@@ -71,7 +69,7 @@ test.describe('visible model downloads', () => {
     await page.goto('/pipeline-demo?step=insights')
     const insights = page.locator('#step-panel-insights')
     await insights.getByRole('radio', { name: /Snel/ }).check()
-    await insights.getByRole('button', { name: /Thema's samenvatten/ }).click()
+    await insights.getByRole('button', { name: 'Samenvattingen schrijven' }).click()
     await expect.poll(() => page.evaluate(() => typeof window.__pushEvent)).toBe('function')
 
     await push(page, download(1.3e9, 2.6e9, 'quick'))
@@ -95,7 +93,7 @@ test.describe('visible model downloads', () => {
     })
     await page.goto('/pipeline-demo?step=insights')
     const insights = page.locator('#step-panel-insights')
-    await insights.getByRole('button', { name: /Thema's samenvatten/ }).click()
+    await insights.getByRole('button', { name: 'Samenvattingen schrijven' }).click()
 
     const alert = insights.getByRole('alert').filter({ hasText: 'Het AI-model kon niet worden gestart' })
     await expect(alert).toBeVisible()
@@ -120,7 +118,7 @@ test.describe('visible model downloads', () => {
     })
     await page.goto('/pipeline-demo?step=insights')
     const insights = page.locator('#step-panel-insights')
-    await insights.getByRole('button', { name: /Thema's samenvatten/ }).click()
+    await insights.getByRole('button', { name: 'Samenvattingen schrijven' }).click()
     await expect(insights.getByRole('alert').filter({ hasText: 'Het AI-model kon niet worden gestart' })).toBeVisible()
     expect(mockApi.requestsTo('/api/llm-models/start-stream', 'POST')).toHaveLength(1)
     expect(mockApi.requestsTo('/api/precompute-insights', 'POST')).toHaveLength(0)

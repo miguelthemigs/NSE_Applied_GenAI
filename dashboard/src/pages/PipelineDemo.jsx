@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import AnonymizerTab from '../components/AnonymizerTab';
 import VectorDBBuilder from '../components/VectorDBBuilder';
 import ThemeReranker from '../components/ThemeReranker';
-import InsightGenerator from '../components/InsightGenerator';
+import WriteSummaries from '../components/pipeline/insights/WriteSummaries';
 import QueryTab from '../components/QueryTab';
 import Stepper from '../components/pipeline/Stepper';
 import WelcomeBackBanner from '../components/pipeline/WelcomeBackBanner';
@@ -18,7 +18,7 @@ const PANELS = {
   anonymize: AnonymizerTab,
   vectors: VectorDBBuilder,
   rerank: ThemeReranker,
-  insights: InsightGenerator,
+  insights: WriteSummaries,
   query: QueryTab,
 };
 

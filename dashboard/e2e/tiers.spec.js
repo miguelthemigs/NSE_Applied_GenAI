@@ -37,9 +37,7 @@ notStarted.steps.insights.summary = null
 const INSIGHT_ROUTES = {
   '/api/model-tiers': TIERS_RESPONSE,
   '/api/pipeline/status': notStarted,
-  '/api/cache-status': { main_baseline: 0, main_filtered: 0, subtheme_baseline: 0, subtheme_filtered: 0 },
-  '/api/vector-stats': { total_documents: 120 },
-  '/api/filter-options': { status: 'success', options: {} },
+  '/api/insights/results': { rows: [], estimate: null },
   'POST /api/llm-models/start-stream': { ndjson: [{ status: 'progress', stage: 'load' }, { status: 'success' }] },
   'POST /api/precompute-insights': { ndjson: [{ status: 'success', progress: 100 }] },
 }
@@ -155,9 +153,9 @@ test.describe('model tiers, step 4', () => {
     // Choosing a tier starts nothing (no 2.5-minute model start on a radio click).
     expect(mockApi.requests.filter((r) => r.path.startsWith('/api/llm-models/start'))).toHaveLength(0)
 
-    await p.getByRole('button', { name: /Thema's samenvatten/ }).click()
+    await p.getByRole('button', { name: 'Samenvattingen schrijven' }).click()
     await expect.poll(() => mockApi.requestsTo('/api/precompute-insights', 'POST').length).toBe(1)
     expect(mockApi.requestsTo('/api/llm-models/start-stream', 'POST').map((r) => r.body.model_id)).toEqual([E2B])
-    expect(mockApi.requestsTo('/api/precompute-insights', 'POST')[0].body.llm_model).toBe(E2B)
+    expect(mockApi.requestsTo('/api/precompute-insights', 'POST')[0].body.model_id).toBe(E2B)
   })
 })

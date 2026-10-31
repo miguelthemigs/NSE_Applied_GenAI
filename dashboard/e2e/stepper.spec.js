@@ -84,7 +84,7 @@ test.describe('stepper and soft gating', () => {
     await mockApi({
       '/api/pipeline/status': statusFixture('all-done'),
       ...VECTOR_ROUTES,
-      '/api/cache-status': { main_baseline: 7, main_filtered: 0, subtheme_baseline: 0, subtheme_filtered: 0 },
+      '/api/insights/results': { rows: [{ kind: 'main', done: 7, total: 7, state: 'done' }, { kind: 'sub', done: 31, total: null, state: 'done' }, { kind: 'filtered', done: 0, total: 0, state: 'off' }], estimate: null },
       'POST /api/build-vectors': async () => {
         await gate
         return {
@@ -126,7 +126,7 @@ test.describe('stepper and soft gating', () => {
       '/api/pipeline/status': before,
       '/api/status': { status: 'success' },
       'POST /api/pipeline/skip-rerank': after,
-      '/api/cache-status': { main_baseline: 7, main_filtered: 0, subtheme_baseline: 0, subtheme_filtered: 0 },
+      '/api/insights/results': { rows: [{ kind: 'main', done: 7, total: 7, state: 'done' }, { kind: 'sub', done: 31, total: null, state: 'done' }, { kind: 'filtered', done: 0, total: 0, state: 'off' }], estimate: null },
     })
     await page.goto('/pipeline-demo?step=rerank')
     await visiblePanel(page).getByRole('button', { name: 'Stap overslaan' }).click()
