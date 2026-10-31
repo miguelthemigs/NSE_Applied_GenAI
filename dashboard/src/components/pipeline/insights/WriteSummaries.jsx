@@ -77,6 +77,9 @@ export default function WriteSummaries({ onNavigate }) {
   const [logs, setLogs] = useState([])
   const [download, setDownload] = useState(null)
   const [runError, setRunError] = useState(null) // {key, message?, detail}
+  const [estimateFailed, setEstimateFailed] = useState(false)
+  // Set before the first await, so a double click can't start a second run.
+  const inFlight = useRef(false)
   const [rerunning, setRerunning] = useState(false) // settings instead of the Done card
   const [succeeded, setSucceeded] = useState(false)
   const [statusNotice, setStatusNotice] = useState(false)
@@ -141,11 +144,26 @@ export default function WriteSummaries({ onNavigate }) {
   }
 
   const run = async () => {
-    if (!view.canStart || phase === 'running') return
+    if (!view.canStart || phase === 'running' || inFlight.current) return
+    inFlight.current = true
+    try {
+      await runOnce()
+    } finally {
+      inFlight.current = false
+    }
+  }
+
+  const runOnce = async () => {
+    setEstimateFailed(false)
     const dims = runDims
     if (dims.length > 0) {
+      // Never start a combinations run without knowing its size (it may need the >500 confirm).
       const est = shownEstimate ?? (await fetchEstimate(dims))
-      if (est && est.count > CONFIRM_ABOVE) {
+      if (!est) {
+        setEstimateFailed(true)
+        return
+      }
+      if (est.count > CONFIRM_ABOVE) {
         const hours = formatNumber(Math.round((est.minutes / 60) * 10) / 10)
         if (!window.confirm(t('insights.confirmLarge', { count: formatNumber(est.count), hours }))) return
       }
@@ -316,6 +334,10 @@ export default function WriteSummaries({ onNavigate }) {
                   />
                   <span className="font-semibold text-on-surface">{filteredLabel}</span>
                 </label>
+
+                {estimateFailed && (
+                  <p role="alert" className="m-0 rounded-[12px] bg-error-container text-on-error-container px-4 py-3 font-medium">{t('insights.estimateFailed')}</p>
+                )}
 
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                   <button type="button" onClick={run} disabled={!view.canStart} className={runButton}>

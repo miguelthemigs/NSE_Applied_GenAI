@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, vi } from 'vitest'
@@ -114,6 +114,43 @@ describe('WriteSummaries', () => {
     await waitFor(() => expect(calls('POST', '/api/precompute-insights')).toHaveLength(1))
     const body = JSON.parse(calls('POST', '/api/precompute-insights')[0][1].body)
     expect(body.filter_dimensions).toEqual(['academic_year', 'location', 'programme'])
+  })
+
+  it('if the estimate fails at click time with combinations on, it shows an error and starts nothing', async () => {
+    mockBackend({
+      'POST /api/precompute-preview': () => jsonResponse({ status: 'error' }, 500),
+    })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderStep()
+    const button = await runButton()
+    await waitFor(() => expect(button).toBeEnabled())
+    await userEvent.click(screen.getByRole('checkbox', { name: /elke combinatie van jaar, locatie en opleiding/ }))
+    await userEvent.click(button)
+    expect(await screen.findByText('We konden niet berekenen hoeveel samenvattingen dit worden. Probeer het opnieuw.')).toBeVisible()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(calls('POST', '/api/llm-models/start-stream')).toHaveLength(0)
+    expect(calls('POST', '/api/precompute-insights')).toHaveLength(0)
+  })
+
+  it('a double click starts one run', async () => {
+    let release
+    const pending = new Promise((resolve) => { release = resolve })
+    mockBackend({
+      // Slow estimate: both clicks land while the first one still waits for it.
+      'POST /api/precompute-preview': async () => {
+        await pending
+        return jsonResponse({ valid_combos: 2, estimate: { count: 14, minutes: 21 } })
+      },
+    })
+    renderStep()
+    const button = await runButton()
+    await waitFor(() => expect(button).toBeEnabled())
+    await userEvent.click(screen.getByRole('checkbox', { name: /elke combinatie van jaar, locatie en opleiding/ }))
+    fireEvent.click(button)
+    fireEvent.click(button)
+    release()
+    await waitFor(() => expect(calls('POST', '/api/precompute-insights')).toHaveLength(1))
+    expect(calls('POST', '/api/llm-models/start-stream')).toHaveLength(1)
   })
 
   it('a busy refusal (409 error.busy) names the running step and never POSTs precompute', async () => {

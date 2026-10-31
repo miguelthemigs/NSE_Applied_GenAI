@@ -65,6 +65,7 @@
   "insights.filtered": "Also write summaries for every combination of year, location and programme (takes longer: {count} summaries, about {min} min)",
   "insights.filtered.label": "Also write summaries for every combination of year, location and programme",
   "insights.confirmLarge": "This is {count} summaries and takes about {hours} hours. Continue?",
+  "insights.estimateFailed": "We couldn’t work out how many summaries this would be. Please try again.",
   "insights.row.main": "Main themes",
   "insights.row.sub": "Sub-themes",
   "insights.row.filtered": "Per year, location and programme",

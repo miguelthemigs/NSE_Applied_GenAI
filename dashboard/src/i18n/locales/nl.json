@@ -65,6 +65,7 @@
   "insights.filtered": "Ook samenvattingen voor elke combinatie van jaar, locatie en opleiding (duurt langer: {count} samenvattingen, ongeveer {min} min)",
   "insights.filtered.label": "Ook samenvattingen voor elke combinatie van jaar, locatie en opleiding",
   "insights.confirmLarge": "Dit zijn {count} samenvattingen en duurt ongeveer {hours} uur. Doorgaan?",
+  "insights.estimateFailed": "We konden niet berekenen hoeveel samenvattingen dit worden. Probeer het opnieuw.",
   "insights.row.main": "Hoofdthema's",
   "insights.row.sub": "Subthema's",
   "insights.row.filtered": "Per jaar, locatie en opleiding",
