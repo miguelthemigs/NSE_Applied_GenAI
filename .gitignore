@@ -83,3 +83,7 @@ gemma_subtheme_cache.json
 graphify-out/*
 
 backups/*
+
+# Playwright e2e
+dashboard/test-results/
+dashboard/playwright-report/

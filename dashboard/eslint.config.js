@@ -34,4 +34,10 @@ export default defineConfig([
     files: ['**/*.test.{js,jsx}', 'src/test/**', 'vite.config.js'],
     languageOptions: { globals: { ...globals.browser, ...globals.node, ...globals.vitest } },
   },
+  {
+    // Playwright: Node globals; its fixture `use` callback is not a React hook
+    files: ['e2e/**', 'playwright.config.js'],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+    rules: { 'react-hooks/rules-of-hooks': 'off' },
+  },
 ])
