@@ -17,6 +17,7 @@ export default function ThemeReranker({ onNavigate }) {
   const vectorsAt = pipeline?.steps?.vectors?.completed_at;
   const [status, setStatus] = useState(null);
   const [skipping, setSkipping] = useState(false);
+  const [skipError, setSkipError] = useState(null);
   const [rerankerModel, setRerankerModel] = useState(DEFAULT_RERANKER);
   const [allowModelDownload, setAllowModelDownload] = useState(true);
   const [maxDocuments, setMaxDocuments] = useState('');
@@ -42,11 +43,13 @@ export default function ThemeReranker({ onNavigate }) {
   // Skipping is saved server-side; the response is the new pipeline status.
   const handleSkip = async () => {
     setSkipping(true);
+    setSkipError(null);
     try {
       const res = await postJson('/api/pipeline/skip-rerank', { skipped: true });
       if (res.ok) onNavigate?.('insights');
+      else setSkipError(res.data?.error || res.data?.message || `HTTP ${res.status}`);
     } catch (e) {
-      // offline: refresh() below shows the offline message
+      setSkipError(e.message);
     } finally {
       setSkipping(false);
       refresh();
@@ -181,7 +184,16 @@ export default function ThemeReranker({ onNavigate }) {
                 {t('action.skip')}
               </button>
             )}
-            <GateReason view={view} onNavigate={onNavigate} className="ml-auto" />
+            <GateReason stepId="rerank" onNavigate={onNavigate} className="ml-auto" />
+            {skipError && (
+              <div role="alert" className="basis-full order-last rounded-xl bg-error-container text-on-error-container px-4 py-3 text-sm">
+                <p className="m-0 font-semibold">{t('rerank.skipFailed')}</p>
+                <details className="mt-1">
+                  <summary className="cursor-pointer">{t('action.details')}</summary>
+                  <p className="mt-1 break-words">{skipError}</p>
+                </details>
+              </div>
+            )}
             <button
               onClick={handleRerank}
               disabled={!view.canStart || loading}

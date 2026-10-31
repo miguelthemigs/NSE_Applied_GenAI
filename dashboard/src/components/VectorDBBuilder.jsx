@@ -282,7 +282,7 @@ export default function VectorDBBuilder({ onNavigate }) {
             <div className="text-sm text-gray-600">
               {t('vec.summary', { r: formatNumber(rowCount), model: activeModel?.name || selectedModel })}
             </div>
-            <GateReason view={view} onNavigate={onNavigate} className="ml-auto" />
+            <GateReason stepId="vectors" onNavigate={onNavigate} className="ml-auto" />
             <button
               onClick={() => handleBuild()}
               disabled={loading || selectedColumns.length === 0 || !view.canStart}

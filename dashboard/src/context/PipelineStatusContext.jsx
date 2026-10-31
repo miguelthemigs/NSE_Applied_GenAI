@@ -3,13 +3,16 @@ import { getJson, OfflineError } from '../services/api'
 
 const STATUS_PATH = '/api/pipeline/status'
 const POLL_MS = 2000
+const OFFLINE_RETRY_MS = 5000
 
 const PipelineStatusContext = createContext(null)
 
 /**
  * Holds GET /api/pipeline/status, the single source of truth for step state.
- * It loads once on mount, polls every 2 s while a job is active, and steps call
- * refresh() whenever one of their streams ends (success, error or abort).
+ * It loads once on mount, polls every 2 s while a job is active, retries every
+ * 5 s while the backend is offline, and steps call refresh() whenever one of
+ * their streams ends (success, error or abort). The next poll is scheduled only
+ * after the previous response, so a slow status call never piles up requests.
  * error is null, 'offline' (backend unreachable) or 'failed' (bad response);
  * the last good status is kept when a refresh fails.
  */
@@ -47,12 +50,21 @@ export function PipelineStatusProvider({ children }) {
     refresh()
   }, [refresh])
 
-  const jobActive = Boolean(status?.active_job)
+  const pollMs = status?.active_job ? POLL_MS : error === 'offline' ? OFFLINE_RETRY_MS : null
   useEffect(() => {
-    if (!jobActive) return undefined
-    const id = setInterval(refresh, POLL_MS)
-    return () => clearInterval(id)
-  }, [jobActive, refresh])
+    if (!pollMs) return undefined
+    let cancelled = false
+    let timer
+    const tick = async () => {
+      await refresh()
+      if (!cancelled) timer = setTimeout(tick, pollMs)
+    }
+    timer = setTimeout(tick, pollMs)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [pollMs, refresh])
 
   const value = useMemo(() => ({ status, loading, error, refresh }), [status, loading, error, refresh])
   return <PipelineStatusContext.Provider value={value}>{children}</PipelineStatusContext.Provider>

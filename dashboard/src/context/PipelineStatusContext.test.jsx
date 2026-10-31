@@ -79,6 +79,66 @@ describe('PipelineStatusProvider', () => {
     expect(statusCalls()).toBe(after)
   })
 
+  it('a slow poll never overlaps the next one, and its answer is applied', async () => {
+    fetch.mockResolvedValue(jsonResponse(vectorsRunning))
+    await mount()
+    expect(statusCalls()).toBe(1)
+    // From now on every status call takes 5 s to answer.
+    let inFlight = 0
+    let maxInFlight = 0
+    fetch.mockImplementation(() => {
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      return new Promise((resolve) =>
+        setTimeout(() => {
+          inFlight -= 1
+          resolve(jsonResponse(allDone))
+        }, 5_000),
+      )
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000) // poll 2 starts
+    })
+    expect(statusCalls()).toBe(2)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000) // an interval would have fired twice more by now
+    })
+    expect(statusCalls()).toBe(2)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000) // poll 2 answers: job finished
+    })
+    expect(screen.getByTestId('out')).toHaveTextContent('done|ok')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000)
+    })
+    expect(statusCalls()).toBe(2)
+    expect(maxInFlight).toBe(1)
+  })
+
+  it('retries every 5 s while offline and recovers without a reload', async () => {
+    fetch.mockRejectedValue(new TypeError('Failed to fetch'))
+    await mount()
+    expect(screen.getByTestId('out')).toHaveTextContent('none|offline')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_999)
+    })
+    expect(statusCalls()).toBe(1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(statusCalls()).toBe(2)
+    fetch.mockResolvedValue(jsonResponse(fresh))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    expect(screen.getByTestId('out')).toHaveTextContent('blocked|ok')
+    const after = statusCalls()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000)
+    })
+    expect(statusCalls()).toBe(after)
+  })
+
   it('refresh() fetches again on demand', async () => {
     fetch.mockResolvedValue(jsonResponse(fresh))
     await mount()

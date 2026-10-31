@@ -56,7 +56,11 @@ function StateCircle({ step, shown }) {
     )
   }
   if (shown === 'partial') {
-    return <span className={`${base} border-2 border-primary bg-[linear-gradient(90deg,#002f59_50%,#ffffff_50%)]`} aria-hidden="true" />
+    return (
+      <span className="w-9 h-9 rounded-full shrink-0 box-border border-2 border-primary bg-surface-container-lowest overflow-hidden flex" aria-hidden="true">
+        <span className="w-1/2 bg-primary" />
+      </span>
+    )
   }
   let ring = 'border-2 border-outline-variant text-outline'
   let content = <Icon name="lock" className="text-[18px]" />
@@ -117,8 +121,13 @@ export default function Stepper({ status, current, onSelect }) {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const tabRefs = useRef([])
+  const toggleRef = useRef(null)
   const views = Object.fromEntries(PIPELINE_STEPS.map((s) => [s.id, deriveStepView(status, s.id)]))
+  // current is null while the first status loads: then no tab is selected yet.
   const currentStep = PIPELINE_STEPS.find((s) => s.id === current) ?? PIPELINE_STEPS[0]
+  const currentView = views[currentStep.id]
+  const currentLabel = stateLabel(t, status, currentStep, currentView, displayState(status, currentStep, currentView))
+  const position = t('stepper.position', { n: currentStep.n, total: PIPELINE_STEPS.length })
 
   const onKeyDown = (e) => {
     const last = PIPELINE_STEPS.length - 1
@@ -137,20 +146,20 @@ export default function Stepper({ status, current, onSelect }) {
   return (
     <div className="flex flex-col gap-3">
       <button
+        ref={toggleRef}
         type="button"
         aria-expanded={open}
         aria-controls="pipeline-stepper"
         onClick={() => setOpen((v) => !v)}
         className="min-[641px]:hidden w-full border border-outline-variant bg-surface-container-lowest rounded-2xl px-4 py-3.5 flex flex-col gap-2.5 text-left text-on-surface"
       >
-        <span className="flex justify-between items-center w-full">
-          <span className="text-[13px] font-bold text-on-surface-variant tracking-[0.04em] uppercase">
-            {t('stepper.position', { n: currentStep.n, total: PIPELINE_STEPS.length })}
-            <span className="sr-only"> · </span>
-          </span>
+        {/* One spoken name: "Stap 2 van 5 · {name} · {state}"; the visible parts are hidden from AT. */}
+        <span className="sr-only">{[position, t('step.' + currentStep.id), currentLabel].join(' · ')}</span>
+        <span aria-hidden="true" className="flex justify-between items-center w-full">
+          <span className="text-[13px] font-bold text-on-surface-variant tracking-[0.04em] uppercase">{position}</span>
           <Icon name={open ? 'expand_less' : 'expand_more'} className="text-[20px] text-on-surface-variant" />
         </span>
-        <span className="font-bold text-base">{t('step.' + currentStep.id)}</span>
+        <span aria-hidden="true" className="font-bold text-base">{t('step.' + currentStep.id)}</span>
         <Dots views={views} current={currentStep.id} />
       </button>
 
@@ -158,6 +167,7 @@ export default function Stepper({ status, current, onSelect }) {
         role="tablist"
         id="pipeline-stepper"
         aria-label={t('stepper.label')}
+        aria-orientation={open ? 'vertical' : 'horizontal'}
         data-expanded={open}
         onKeyDown={onKeyDown}
         className={`${open ? 'grid' : 'hidden'} min-[641px]:grid grid-cols-1 min-[641px]:grid-cols-5 gap-2 bg-surface-container-lowest border border-outline-variant rounded-2xl p-3 min-[641px]:p-5`}
@@ -165,7 +175,8 @@ export default function Stepper({ status, current, onSelect }) {
         {PIPELINE_STEPS.map((step, i) => {
           const view = views[step.id]
           const shown = displayState(status, step, view)
-          const selected = step.id === currentStep.id
+          const selected = step.id === current
+          const focusable = selected || (!current && i === 0)
           const selectedBg = WARNING_STATES.has(shown) ? 'bg-warning-container' : 'bg-primary-fixed'
           return (
             <button
@@ -176,10 +187,14 @@ export default function Stepper({ status, current, onSelect }) {
               id={stepTabId(step.id)}
               aria-selected={selected}
               aria-controls={stepPanelId(step.id)}
-              tabIndex={selected ? 0 : -1}
+              tabIndex={focusable ? 0 : -1}
               onClick={() => {
                 onSelect(step.id)
-                setOpen(false)
+                // On small screens the list collapses again; keep focus on its toggle.
+                if (open) {
+                  setOpen(false)
+                  toggleRef.current?.focus()
+                }
               }}
               className={`min-h-[44px] rounded-xl p-3 text-left flex items-center gap-3 min-[641px]:flex-col min-[641px]:items-start min-[641px]:gap-2 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${selected ? selectedBg : 'hover:bg-surface-container-low'}`}
             >

@@ -228,7 +228,7 @@ export default function QueryTab({ onNavigate }) {
             </div>
           </div>
 
-          <GateReason view={view} onNavigate={onNavigate} className="block" />
+          <GateReason stepId="query" showBusy={false} onNavigate={onNavigate} className="block" />
 
           {/* Submit Button */}
           <button

@@ -371,5 +371,7 @@
   "stepper.label": "Stappen",
   "stepper.position": "Stap {n} van {total}",
   "state.optional": "optioneel",
-  "pipeline.statusError": "De voortgang van de stappen kon niet worden geladen."
+  "pipeline.statusError": "De voortgang van de stappen kon niet worden geladen.",
+  "gate.busy": "Wacht tot stap {n} klaar is",
+  "rerank.skipFailed": "De stap kon niet worden overgeslagen. Probeer het opnieuw."
 }

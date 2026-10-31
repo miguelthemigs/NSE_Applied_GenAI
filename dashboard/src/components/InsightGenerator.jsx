@@ -493,7 +493,7 @@ export default function InsightGenerator({ onNavigate }) {
               )}
             </div>
 
-            <GateReason view={view} onNavigate={onNavigate} className="block mb-3" />
+            <GateReason stepId="insights" onNavigate={onNavigate} className="block mb-3" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <button
                 onClick={() => launchPrecompute({ endpoint: '/api/precompute-insights', useFilterGrid: false, label: 'ins.label.main' })}

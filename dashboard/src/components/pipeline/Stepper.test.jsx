@@ -45,12 +45,12 @@ describe('Stepper', () => {
     expect(screen.getByRole('tab', { name: /Samenvattingen schrijven.*Eerst stap 2/ })).toBeInTheDocument()
   })
 
-  it('shows review count and running progress', () => {
+  it('shows the review count of step 1', () => {
     renderStepper({ status: anonNeedsReview })
     expect(screen.getByRole('tab', { name: /Persoonsgegevens verwijderen.*1 om na te kijken/ })).toBeInTheDocument()
   })
 
-  it('shows the running percentage, and no percentage before the first event', () => {
+  it('shows the running percentage', () => {
     renderStepper({ status: vectorsRunning, current: 'vectors' })
     expect(screen.getByRole('tab', { name: /Antwoorden doorzoekbaar maken.*Bezig… 42%/ })).toBeInTheDocument()
   })
@@ -88,11 +88,31 @@ describe('Stepper', () => {
     expect(toggle).toHaveTextContent('Antwoorden doorzoekbaar maken')
   })
 
-  it('the collapsed control expands the step list', async () => {
+  it('the collapsed control names the current state and expands a vertical step list', async () => {
     renderStepper({ status: vectorsRunning, current: 'vectors' })
-    const toggle = screen.getByRole('button', { name: /Stap 2 van 5/ })
+    const toggle = screen.getByRole('button', { name: /^Stap 2 van 5\s·\sAntwoorden doorzoekbaar maken\s·\sBezig… 42%$/ })
+    expect(screen.getByRole('tablist')).toHaveAttribute('aria-orientation', 'horizontal')
     await userEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('tablist')).toHaveAttribute('data-expanded', 'true')
+    expect(screen.getByRole('tablist')).toHaveAttribute('aria-orientation', 'vertical')
+  })
+
+  it('picking a step from the expanded list collapses it and returns focus to the toggle', async () => {
+    const { onSelect } = renderStepper({ status: vectorsRunning, current: 'vectors' })
+    const toggle = screen.getByRole('button', { name: /Stap 2 van 5/ })
+    await userEvent.click(toggle)
+    await userEvent.click(screen.getByRole('tab', { name: /Persoonsgegevens verwijderen/ }))
+    expect(onSelect).toHaveBeenCalledWith('anonymize')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveFocus()
+  })
+
+  it('while the first status loads no tab is selected, but the first one stays reachable by Tab', () => {
+    renderStepper({ status: null, current: null })
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.filter((t) => t.getAttribute('aria-selected') === 'true')).toHaveLength(0)
+    expect(tabs[0]).toHaveAttribute('tabindex', '0')
+    expect(tabs[1]).toHaveAttribute('tabindex', '-1')
   })
 })

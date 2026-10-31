@@ -3,6 +3,7 @@ import { useNdjsonStream } from '../hooks/useNdjsonStream';
 import { apiUrl } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import Icon from './Icon';
+import GateReason from './pipeline/GateReason';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 
@@ -398,7 +399,8 @@ export default function AnonymizerTab({ onNavigate }) {
                     <svg className="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
                     <span className="text-sm font-medium">{t('anon.existing')}</span>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <GateReason stepId="anonymize" onNavigate={onNavigate} />
                     <button
                       onClick={runCheck}
                       disabled={loading || !view.canStart}
@@ -613,6 +615,7 @@ export default function AnonymizerTab({ onNavigate }) {
               </div>
             )}
 
+            <GateReason stepId="anonymize" onNavigate={onNavigate} className="block text-right" />
             <div className="flex gap-4 pt-2">
               <button
                 onClick={() => setStep(1)}

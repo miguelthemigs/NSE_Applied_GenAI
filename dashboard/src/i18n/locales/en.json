@@ -371,5 +371,7 @@
   "stepper.label": "Steps",
   "stepper.position": "Step {n} of {total}",
   "state.optional": "optional",
-  "pipeline.statusError": "Couldn't load the progress of the steps."
+  "pipeline.statusError": "Couldn't load the progress of the steps.",
+  "gate.busy": "Wait until step {n} has finished",
+  "rerank.skipFailed": "Couldn't skip this step. Try again."
 }

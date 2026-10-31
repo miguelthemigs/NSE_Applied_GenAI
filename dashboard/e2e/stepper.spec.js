@@ -132,6 +132,40 @@ test.describe('stepper and soft gating', () => {
     expect(mockApi.requestsTo('/api/pipeline/skip-rerank', 'POST').map((r) => r.body)).toEqual([{ skipped: true }])
   })
 
+  test('a failed skip explains it, keeps the raw message behind "Details tonen" and stays on step 3', async ({ page, mockApi }) => {
+    const before = statusFixture('all-done')
+    before.steps.rerank = { state: 'not_started', completed_at: null, summary: null }
+    await mockApi({
+      '/api/pipeline/status': before,
+      '/api/status': { status: 'success' },
+      'POST /api/pipeline/skip-rerank': { status: 500, json: { status: 'error', error: 'state file locked' } },
+    })
+    await page.goto('/pipeline-demo?step=rerank')
+    const panel = visiblePanel(page)
+    await panel.getByRole('button', { name: 'Stap overslaan' }).click()
+    const alert = panel.getByRole('alert')
+    await expect(alert).toContainText('De stap kon niet worden overgeslagen. Probeer het opnieuw.')
+    await expect(alert.getByText('state file locked')).toBeHidden()
+    await alert.getByText('Details tonen').click()
+    await expect(alert.getByText('state file locked')).toBeVisible()
+    await expect(page).toHaveURL(/\?step=rerank$/)
+  })
+
+  test('while another step runs, main buttons say which step to wait for', async ({ page, mockApi }) => {
+    const running = statusFixture('all-done')
+    running.active_job = { step: 'insights', stage: null, progress: null }
+    running.steps.insights.state = 'in_progress'
+    running.steps.rerank = { state: 'not_started', completed_at: null, summary: null }
+    await mockApi({ '/api/pipeline/status': running, '/api/status': { status: 'success' } })
+    await page.goto('/pipeline-demo?step=rerank')
+    const panel = visiblePanel(page)
+    await expect(panel.getByRole('button', { name: "Thema's controleren", exact: true })).toBeDisabled()
+    await panel.getByRole('link', { name: 'Wacht tot stap 4 klaar is' }).click()
+    await expect(page).toHaveURL(/\?step=insights$/)
+    // the running step itself shows no "wait" reason
+    await expect(visiblePanel(page).getByRole('link', { name: /Wacht tot stap/ })).toHaveCount(0)
+  })
+
   test('backend offline: the page explains it and keeps the steps', async ({ page }) => {
     await offline(page)
     await page.goto('/pipeline-demo')
