@@ -181,6 +181,59 @@ To bypass this bottleneck, the pipeline implements an **$O(k)$ Centroid-based Cl
 
 ---
 
+## UI state model
+
+The pipeline page and the Overview read one source of truth for what is done. No step state lives in `localStorage` (it only holds `nse.lang`, plus `sessionStorage['nse.welcomed']` for the once-per-session banner). Spec: `docs/superpowers/specs/2026-10-31-ui-fixes-design.md`.
+
+### Status endpoint
+
+`GET /api/pipeline/status` (`src/api/pipeline_routes.py`, built by `src/pipeline/status.py`) returns `status`, `last_updated`, `active_job` and one entry per step (`anonymize`, `vectors`, `rerank`, `insights`, `query`), each with `state`, `completed_at` and a `summary`. `state` is one of `not_started | in_progress | interrupted | done | partial | stale | needs_review | unverified | skipped | error | blocked | ready`. The "done when" rules per step are in the spec table (D5). Every step is built inside `_safe(...)`, so one failing step shows `error` and does not break the others. The frontend polls it and shows the offline banner when it cannot be reached.
+
+### `data/pipeline_state.json`
+
+Written only by `src/pipeline/state.py` (atomic write through a `.tmp` file, guarded by `state_lock`). It holds timestamps and flags: `anonymize.{completed_at, acknowledged, acknowledged_report}`, `vectors.{completed_at, model, documents, tier}`, `rerank.{completed_at, skipped, stats}`, `insights.{completed_at}`. If the file or an entry is missing, `completed_at` falls back to the artefact's mtime (anonymised CSV and report, `chroma.sqlite3`). Reading the status never creates the file; only a finished step, an acknowledgement or a skip does. Caveat: the mtime fallback for vectors changes when the vector DB is opened, so on a machine without the state file the vectors "last updated" time can move after a backend restart. It stops once step 2 has been run once.
+
+### Jobs registry
+
+`src/pipeline/jobs.py` keeps the one currently streaming job in memory (`start_job`, `update_job`, `finish_job`, `tracked_stream`). It is in memory on purpose: after a restart no job is active, so a half-finished step reads as `interrupted`, never as `in_progress` forever. All thread-safe code lives here; `app.py` must not import `threading` (enforced by `tests/test_app_startup.py`).
+
+### Review gate and the step-2 gate
+
+- Verification skipped gives `unverified` (amber, never green). Possible misses with no acknowledgement give `needs_review`. The possibly-missed list stays visible inside the Done card.
+- `POST /api/pipeline/acknowledge-review` stores the tick, tied to the report id (the report `timestamp`). If a newer report exists the server refuses and the UI asks for a fresh look. Re-running step 1 resets the acknowledgement (`ACK_RESET`).
+- `POST /api/build-vectors` is gated on the server (`_anonymize_gate` in `src/api/vector_routes.py`): it answers `409` with `code: "error.blocked"` unless step 1 is `done`. It fails closed if the status cannot be built. The UI disables the button too, but the server is the real gate.
+- `POST /api/pipeline/skip-rerank` saves the skip of optional step 3.
+
+### i18n
+
+`dashboard/src/i18n/I18nProvider.jsx` is a small custom provider (no react-i18next). Dictionaries: `dashboard/src/i18n/locales/nl.json` and `en.json`. Default is `nl`, saved in `localStorage['nse.lang']` (every storage access is in try/catch). Use `const { t } = useI18n()`.
+
+Key conventions: `step.<id>` and `step.<id>.lead`; `state.<state>`; `done.<step>`; `error.<code>`; `theme.<key>` (theme names stay English as data and cache keys, only the display name is translated). Backend stream events carry `code` and `params`; the UI translates `code`, and the raw English `message` appears only behind "Details tonen / Show details". Add every key to both files.
+
+`npm run check:copy` (`dashboard/scripts/check-copy.mjs`) scans `src/components` and `src/pages` and fails on banned literals, emoji, the glyphs U+2713 and U+00D7, inline `<svg>` in the pipeline scope, and old-palette Tailwind classes. The banned list is `dashboard/scripts/banned-copy.mjs`: `Drop your CSV`, `Vorige run`, `Check uitvoeren`, `Overslaan`, `not_run`, `Launch `, `Vector DB`, `Reranker`, `Processing Stream`. The e2e language spec reuses the same list on rendered text. Not covered: the language of the LLM summary text (prompts are English; recorded follow-up, D4).
+
+### Model tiers
+
+`dashboard/src/config/modelTiers.json` (read through `modelTiers.js`) is the single place. Quick = Octen 0.6B + Gemma E2B; Balanced (default, equals the old defaults) = Octen 0.6B + `gemma-4-12B-it-qat-GGUF:UD-Q4_K_XL`; Most thorough = Octen 4B + Gemma 26B A4B. Tiers are chosen per step (step 2 picks the embedding model, step 4 the LLM). The reranker is fixed. Technical model IDs only show under Advanced.
+
+### Download progress
+
+`src/pipeline/model_downloads.py` pre-downloads with `huggingface_hub.snapshot_download(tqdm_class=...)` and emits NDJSON events with `stage: "download"` and `bytes_done` / `bytes_total` (throttled to about two per second; `bytes_total: null` means indeterminate). If nothing is missing it emits no download event. The frontend maps them in `dashboard/src/utils/downloadProgress.js`. `POST /api/llm-models/start-stream` is the only path that downloads an LLM; every other route answers `409 error.model_missing` when the files are not local. The embedding model is downloaded inside the step 2 stream. llama-server is started from the local cache with `--offline`. Details and measurements: the spike section of the spec.
+
+### Add a step
+
+1. Add an entry to `dashboard/src/config/pipelineSteps.js` (`id`, `n`, `icon`, `requires`, `optional`).
+2. Add `step.<id>`, `step.<id>.lead` and its `done.<id>` message to `nl.json` and `en.json`.
+3. Backend: add a `_<id>_step` builder in `src/pipeline/status.py` and register it in `build_pipeline_status()` (wrap it in `_safe`). Call `state.mark_completed("<id>")` when the step succeeds, and run its stream through `jobs.tracked_stream`. Gate it on the server if it must not run out of order.
+4. Add the step component under `dashboard/src/components/` using the shared pipeline pieces (`components/pipeline/`: `ProgressPanel`, Done card, `TierPicker`).
+5. Add a status fixture in `dashboard/e2e/fixtures/status/` and cover it in the stepper and done-card specs.
+
+### E2E harness
+
+`npm run e2e` (Playwright, `desktop` and `mobile` projects, config in `dashboard/playwright.config.js`) never needs the real backend or models. `dashboard/e2e/fixtures/api.js` provides the `mockApi` fixture that intercepts every `/api/` call (plain JSON, `{json,status}`, `{ndjson:[...]}` streams or functions; unlisted paths answer 404; `mockApi.requests` records calls). The Vite dev server is started with `VITE_API_BASE` set to the mock origin. Status payloads are in `e2e/fixtures/status/*.json`. `visual.spec.js` renders the mockup boards and writes screenshots to `e2e/__screens__/` (git-ignored). Unit tests: `npm test` (Vitest).
+
+---
+
 ## 4. Technical Debt & Known Limitations
 
 ### Vector DB Scalability

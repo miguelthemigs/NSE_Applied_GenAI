@@ -55,6 +55,14 @@ npm run dev
 
 Vite usually runs on `http://localhost:5173`.
 
+Checks (run from `dashboard/`):
+
+```bash
+npm test             # Vitest unit tests
+npm run check:copy   # fails on banned copy, emoji and old-palette classes
+npm run e2e          # Playwright, desktop + mobile, mocked backend
+```
+
 ### llama.cpp (Required for Insights)
 
 The generation stage uses `llama-server` for local LLM inference. The app can start and stop the server automatically — you do not need to run it manually.
