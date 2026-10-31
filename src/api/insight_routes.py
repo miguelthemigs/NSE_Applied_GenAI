@@ -4,6 +4,8 @@ import json
 
 from flask import Blueprint, Response, jsonify, request
 
+from src.pipeline import jobs, state
+
 insight_bp = Blueprint("insight", __name__)
 generation = import_module("src.pipeline.04_generation.service")
 retrieval = import_module("src.pipeline.03_retrieval.service")
@@ -117,6 +119,14 @@ def cache_status():
         return jsonify({"status": "error", "error": str(exc)}), 500
 
 
+def _tracked_insights(stream):
+    return jobs.tracked_stream(
+        "insights",
+        stream,
+        on_success=lambda _event: state.mark_completed("insights"),
+    )
+
+
 @insight_bp.route("/api/precompute-insights", methods=["POST"])
 def precompute_insights():
     data = request.get_json(silent=True) or {}
@@ -133,7 +143,7 @@ def precompute_insights():
     precache_subthemes = bool(data.get("precache_subthemes", False))
 
     return Response(
-        generation.precompute_insights_stream(
+        _tracked_insights(generation.precompute_insights_stream(
             themes=themes,
             llm_model=data.get("llm_model") or settings.DEFAULT_LLM_MODEL,
             allow_model_download=bool(data.get("allow_model_download", False)),
@@ -142,7 +152,7 @@ def precompute_insights():
             max_documents=max_documents,
             filter_grid=filter_grid,
             precache_subthemes=precache_subthemes,
-        ),
+        )),
         mimetype="application/x-ndjson",
     )
 
@@ -162,7 +172,7 @@ def precompute_subthemes():
     filter_grid = _build_filter_grid(dimension_keys)
 
     return Response(
-        generation.precompute_subthemes_stream(
+        _tracked_insights(generation.precompute_subthemes_stream(
             themes=themes,
             llm_model=data.get("llm_model") or settings.DEFAULT_LLM_MODEL,
             allow_model_download=bool(data.get("allow_model_download", False)),
@@ -170,7 +180,7 @@ def precompute_subthemes():
             filters=_filters_from_payload(data),
             max_documents=max_documents,
             filter_grid=filter_grid,
-        ),
+        )),
         mimetype="application/x-ndjson",
     )
 

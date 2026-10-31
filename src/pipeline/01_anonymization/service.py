@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 from src.config.paths import ANONYMIZED_CSV_PATH, SEP_FILE
+from src.pipeline import jobs, state
 from src.utils.file_parsers import (
     detect_sep,
     get_upload_path,
@@ -54,14 +55,29 @@ def anonymize_uploaded_file(
         f"Layers: {selected_layers} | "
         f"run_verification={run_verification} | sep={repr(sep)}"
     )
-    return _engine.process_file_with_layers(
-        str(input_file),
-        str(ANONYMIZED_CSV_PATH),
-        selected_columns,
-        selected_layers,
-        sep=sep,
-        run_verification=run_verification,
+    return jobs.tracked_stream(
+        "anonymize",
+        _engine.process_file_with_layers(
+            str(input_file),
+            str(ANONYMIZED_CSV_PATH),
+            selected_columns,
+            selected_layers,
+            sep=sep,
+            run_verification=run_verification,
+        ),
+        on_success=_record_anonymize_success,
     )
+
+
+def _record_anonymize_success(_event: dict) -> None:
+    # Also resets the review acknowledgement: there is a new list of misses.
+    state.mark_completed("anonymize")
+
+
+def _record_check_success(_event: dict) -> None:
+    # A re-check rewrites the report but not the data, so downstream steps
+    # stay current; only the acknowledgement of the old miss list is void.
+    state.set_flag("anonymize", "acknowledged", False)
 
 
 def inspect_anonymized_file() -> dict:
@@ -108,7 +124,11 @@ def run_anonymize_check_stream():
         df_tmp = read_dataframe(ANONYMIZED_CSV_PATH, sep=sep, nrows=0)
         columns = [col for col in df_tmp.columns if is_questionnaire_column(col)]
 
-    return _engine.run_check_stream(original_path, str(ANONYMIZED_CSV_PATH), columns)
+    return jobs.tracked_stream(
+        "anonymize",
+        _engine.run_check_stream(original_path, str(ANONYMIZED_CSV_PATH), columns),
+        on_success=_record_check_success,
+    )
 
 
 def anonymize_report_payload() -> dict:

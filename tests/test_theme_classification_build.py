@@ -377,6 +377,8 @@ class ThemeClassificationTests(unittest.TestCase):
                 completed.metadata["theme_reranker_model"],
                 "fake-reranker",
             )
+            # A reranked collection is still a ready vector DB.
+            self.assertTrue(vector_builder.vector_db_is_ready(str(db_path)))
             updated = completed.get(include=["metadatas"])["metadatas"]
             self.assertTrue(
                 any(

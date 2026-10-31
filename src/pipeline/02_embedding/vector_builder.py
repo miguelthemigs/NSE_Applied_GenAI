@@ -240,12 +240,24 @@ def vector_db_is_ready(db_path: str) -> bool:
         embedding_model = metadata.get("embedding_model")
         if not embedding_model:
             return False
-        expected = _classification_for_embedding_model(embedding_model)
-        return all(
-            metadata.get(key) == value
-            for key, value in expected.collection_metadata(
-                status=CLASSIFICATION_STATUS_READY
-            ).items()
+        accepted = [_classification_for_embedding_model(embedding_model)]
+        # A completed rerank pass rewrites the classification keys with the
+        # reranker's config; the collection is still a ready vector DB.
+        reranker_model = metadata.get("theme_reranker_model")
+        if metadata.get("theme_reranker_status") == "ready" and reranker_model:
+            accepted.append(
+                _reranker_classification_for_embedding_model(
+                    embedding_model, reranker_model
+                )
+            )
+        return any(
+            all(
+                metadata.get(key) == value
+                for key, value in expected.collection_metadata(
+                    status=CLASSIFICATION_STATUS_READY
+                ).items()
+            )
+            for expected in accepted
         )
     except Exception:
         return False
