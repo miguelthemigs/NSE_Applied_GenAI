@@ -15,6 +15,7 @@ import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 import { DONE_CARD_STATES } from '../utils/doneMessage';
 import { downloadFromEvent, streamErrorKey } from '../utils/downloadProgress';
+import { gateErrorMessage } from '../utils/gateError';
 
 const DEFAULT_RERANKER = 'zeroentropy/zerank-2-reranker';
 
@@ -57,6 +58,7 @@ export default function ThemeReranker({ onNavigate }) {
 
   // Skipping is saved server-side; the response is the new pipeline status.
   const handleSkip = async () => {
+    if (!view.canStart || skipping) return;
     setSkipping(true);
     setSkipError(null);
     try {
@@ -115,7 +117,7 @@ export default function ThemeReranker({ onNavigate }) {
         }
       });
     } catch (error) {
-      setResult({ error: error.message });
+      setResult({ error: error.message, message: gateErrorMessage(t, error) });
     } finally {
       // Keep the panel until the refreshed status shows the result (no blank step).
       const refreshed = await refresh();
@@ -154,7 +156,7 @@ export default function ThemeReranker({ onNavigate }) {
               <div role="alert" className={errorBox}>
                 <Icon name="error" className="text-[22px] shrink-0" />
                 <div className="min-w-0">
-                  <p className="m-0 font-bold">{t(streamErrorKey(result.code) ?? 'rerank.failed')}</p>
+                  <p className="m-0 font-bold">{result.message ?? t(streamErrorKey(result.code) ?? 'rerank.failed')}</p>
                   <details className="mt-1 text-sm">
                     <summary className="cursor-pointer">{t('action.details')}</summary>
                     <p className="mt-1 break-words">{result.error}</p>

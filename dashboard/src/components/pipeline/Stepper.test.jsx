@@ -7,6 +7,7 @@ import fresh from '../../../e2e/fixtures/status/fresh.json'
 import allDone from '../../../e2e/fixtures/status/all-done.json'
 import anonNeedsReview from '../../../e2e/fixtures/status/anon-needs-review.json'
 import vectorsRunning from '../../../e2e/fixtures/status/vectors-running.json'
+import anonDone from '../../../e2e/fixtures/status/anon-done.json'
 
 function renderStepper(props) {
   const onSelect = vi.fn()
@@ -41,6 +42,14 @@ describe('Stepper', () => {
     renderStepper()
     expect(screen.getByRole('tab', { name: /Persoonsgegevens verwijderen.*Volgende stap/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /Antwoorden doorzoekbaar maken.*Eerst stap 1/ })).toBeInTheDocument()
+    // Steps 3 to 5 need step 1 too, so they name the first step still to do.
+    expect(screen.getByRole('tab', { name: /Thema's controleren.*Eerst stap 1 · optioneel/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Samenvattingen schrijven.*Eerst stap 1/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Stel een vraag.*Eerst stap 1/ })).toBeInTheDocument()
+  })
+
+  it('step 1 done: steps 3 to 5 say step 2 comes first', () => {
+    renderStepper({ status: anonDone })
     expect(screen.getByRole('tab', { name: /Thema's controleren.*Eerst stap 2 · optioneel/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /Samenvattingen schrijven.*Eerst stap 2/ })).toBeInTheDocument()
   })

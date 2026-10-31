@@ -4,6 +4,7 @@ import allDone from '../../e2e/fixtures/status/all-done.json'
 import anonUnverified from '../../e2e/fixtures/status/anon-unverified.json'
 import anonNeedsReview from '../../e2e/fixtures/status/anon-needs-review.json'
 import vectorsRunning from '../../e2e/fixtures/status/vectors-running.json'
+import anonDone from '../../e2e/fixtures/status/anon-done.json'
 
 // Build a status from all-done with some step states overridden.
 function withStates(states, activeJob = null) {
@@ -13,8 +14,12 @@ function withStates(states, activeJob = null) {
 }
 
 describe('deriveStepView', () => {
-  it('fresh install: insights is blocked by vectors and cannot start', () => {
-    expect(deriveStepView(fresh, 'insights')).toEqual({ state: 'blocked', blockedBy: 'vectors', canStart: false })
+  it('fresh install: insights is blocked by the first unmet step, step 1', () => {
+    expect(deriveStepView(fresh, 'insights')).toEqual({ state: 'blocked', blockedBy: 'anonymize', canStart: false })
+  })
+
+  it('step 1 done, no vectors: insights is blocked by vectors', () => {
+    expect(deriveStepView(anonDone, 'insights')).toEqual({ state: 'blocked', blockedBy: 'vectors', canStart: false })
   })
 
   it('fresh install: step 1 can start, step 2 is blocked by step 1', () => {
@@ -54,6 +59,30 @@ describe('deriveStepView', () => {
     const status = withStates({ anonymize: 'unverified' })
     expect(deriveStepView(status, 'vectors')).toEqual({ state: 'done', blockedBy: 'anonymize', canStart: false })
   })
+
+  it('privacy gate: steps 3, 4 and 5 are blocked by step 1 while it needs review, even with vectors done', () => {
+    // The real install: step 1 needs review, the existing vector DB is done.
+    const status = withStates({ anonymize: 'needs_review', rerank: 'not_started', insights: 'not_started' })
+    for (const id of ['rerank', 'insights', 'query']) {
+      expect(deriveStepView(status, id), id).toMatchObject({ blockedBy: 'anonymize', canStart: false })
+    }
+    expect(deriveStepView(status, 'insights').state).toBe('blocked')
+  })
+
+  it('a ready step 5 reads blocked while step 1 needs review: it cannot be used', () => {
+    const status = withStates({ anonymize: 'needs_review' })
+    expect(deriveStepView(status, 'query')).toEqual({ state: 'blocked', blockedBy: 'anonymize', canStart: false })
+  })
+
+  it.each(['unverified', 'not_started', 'in_progress', 'interrupted', 'error'])(
+    'a %s step 1 blocks steps 3 to 5 and is named first, before vectors',
+    (state) => {
+      const status = withStates({ anonymize: state, vectors: 'not_started' })
+      for (const id of ['rerank', 'insights', 'query']) {
+        expect(deriveStepView(status, id).blockedBy, id).toBe('anonymize')
+      }
+    },
+  )
 
   it.each(['needs_review', 'unverified', 'error', 'interrupted', 'partial', 'in_progress', 'not_started'])(
     'a %s requirement does not count as done',

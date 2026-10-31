@@ -60,6 +60,30 @@ def active_job() -> dict | None:
         return dict(_active) if _active is not None else None
 
 
+class JobBusy(Exception):
+    """Another pipeline job holds the slot; `step` is the one that is running."""
+
+    def __init__(self, step: str | None):
+        super().__init__(f"Another step is running: {step}")
+        self.step = step
+
+
+def try_start(step: str) -> dict | None:
+    """Take the job slot for `step` atomically; None when a job already runs."""
+    token, _running = _try_start(step)
+    return token
+
+
+def _try_start(step: str) -> tuple[dict | None, str | None]:
+    global _active
+    with _lock:
+        if _active is not None:
+            return None, _active["step"]
+        token = {"step": step, "stage": None, "progress": 0}
+        _active = token
+        return token, None
+
+
 def tracked_stream(
     step: str,
     stream: Iterable[str],
@@ -69,15 +93,45 @@ def tracked_stream(
 ) -> Iterator[str]:
     """Wrap an NDJSON stream so the registry follows it.
 
-    `on_start()` runs when the stream starts. Progress events update this
-    stream's job slot (one lock acquire per event). On the success event,
-    `on_success(event)` runs *before* the line is yielded, so a client that
-    disconnects right after success still leaves the state saved. The slot is
-    always released, including on client disconnect (GeneratorExit), but only
-    if it still belongs to this stream, so overlapping streams don't clear
-    each other.
+    The job slot is taken right away, before the first event, so a route can
+    still answer 409: raises `JobBusy` (and closes `stream`) when another job
+    already runs. `on_start()` runs when the stream starts. Progress events
+    update this stream's job slot (one lock acquire per event). On the success
+    event, `on_success(event)` runs *before* the line is yielded, so a client
+    that disconnects right after success still leaves the state saved. The
+    slot is always released, including on client disconnect (GeneratorExit)
+    and when the response is closed before it was ever read.
     """
-    token = _start(step)
+    token, running = _try_start(step)
+    if token is None:
+        _close(stream)
+        raise JobBusy(running)
+    return _TrackedStream(token, stream, _run_tracked(step, token, stream, on_start, on_success))
+
+
+class _TrackedStream:
+    """The tracked generator plus a close() that also frees a never-started slot."""
+
+    def __init__(self, token: dict, source: Iterable[str], generator: Iterator[str]):
+        self._token = token
+        self._source = source
+        self._generator = generator
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> str:
+        return next(self._generator)
+
+    def close(self) -> None:
+        try:
+            self._generator.close()
+        finally:
+            _finish(self._token)
+            _close(self._source)
+
+
+def _run_tracked(step, token, stream, on_start, on_success) -> Iterator[str]:
     try:
         if on_start is not None:
             _run_hook(step, on_start)
@@ -92,9 +146,13 @@ def tracked_stream(
             yield line
     finally:
         _finish(token)
-        close = getattr(stream, "close", None)
-        if close is not None:
-            close()
+        _close(stream)
+
+
+def _close(stream) -> None:
+    close = getattr(stream, "close", None)
+    if close is not None:
+        close()
 
 
 def _run_hook(step: str, hook: Callable, *args) -> None:

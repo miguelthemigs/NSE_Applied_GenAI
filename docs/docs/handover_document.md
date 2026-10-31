@@ -195,7 +195,7 @@ Written only by `src/pipeline/state.py` (atomic write through a `.tmp` file, gua
 
 ### Jobs registry
 
-`src/pipeline/jobs.py` keeps the one currently streaming job in memory (`start_job`, `update_job`, `finish_job`, `tracked_stream`). It is in memory on purpose: after a restart no job is active, so a half-finished step reads as `interrupted`, never as `in_progress` forever. All thread-safe code lives here; `app.py` must not import `threading` (enforced by `tests/test_app_startup.py`).
+`src/pipeline/jobs.py` keeps the one currently streaming job in memory (`start_job`, `update_job`, `finish_job`, `tracked_stream`). `tracked_stream` takes the slot atomically (`try_start`) before the first event and raises `JobBusy` when another job runs; the routes turn that into 409 `error.busy` (`src/api/guards.py`, which also holds the step-1 `anonymize_gate` used by steps 2 to 5). It is in memory on purpose: after a restart no job is active, so a half-finished step reads as `interrupted`, never as `in_progress` forever. All thread-safe code lives here; `app.py` must not import `threading` (enforced by `tests/test_app_startup.py`).
 
 ### Review gate and the step-2 gate
 

@@ -8,7 +8,13 @@ from unittest import mock
 
 from flask import Flask
 
+try:
+    import isolation  # noqa: F401
+except ImportError:  # run as tests.test_build_vectors_gate
+    from tests import isolation  # noqa: F401
+
 vector_routes = import_module("src.api.vector_routes")
+pipeline_status = import_module("src.pipeline.status")
 
 
 def _status(anonymize_state: str) -> dict:
@@ -30,7 +36,7 @@ class BuildVectorsGateTests(unittest.TestCase):
 
     def _post(self, anonymize_state=None, *, side_effect=None, body=None):
         kwargs = {"side_effect": side_effect} if side_effect else {"return_value": _status(anonymize_state)}
-        with mock.patch.object(vector_routes.pipeline_status, "build_pipeline_status", **kwargs):
+        with mock.patch.object(pipeline_status, "build_pipeline_status", **kwargs):
             res = self.client.post("/api/build-vectors", json=body or {})
             payload = b"".join(res.response)
         return res, payload

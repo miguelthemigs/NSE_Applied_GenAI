@@ -9,7 +9,13 @@ from unittest import mock
 
 from flask import Flask
 
+try:
+    import isolation  # noqa: F401
+except ImportError:  # run as tests.test_cache_invalidation
+    from tests import isolation  # noqa: F401
+
 vector_routes = import_module("src.api.vector_routes")
+pipeline_status = import_module("src.pipeline.status")
 vector_builder = import_module("src.pipeline.02_embedding.vector_builder")
 cache = import_module("src.pipeline.04_generation.cache")
 
@@ -29,7 +35,7 @@ class CacheInvalidationTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         # Step 1 is done, so the build gets past the anonymize gate.
         gate = mock.patch.object(
-            vector_routes.pipeline_status,
+            pipeline_status,
             "build_pipeline_status",
             return_value={"status": "success", "steps": {"anonymize": {"state": "done"}}},
         )

@@ -7,11 +7,12 @@ import StepHeader from './pipeline/StepHeader';
 import { errorBox, fieldLabel, primaryButton, stepBody, textInput } from './pipeline/stepStyles';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
+import { gateErrorMessage } from '../utils/gateError';
 
 export default function QueryTab({ onNavigate }) {
   const { t, formatNumber } = useI18n();
   const { status } = usePipelineStatus();
-  // Searching starts no job, so only the missing vector DB blocks it.
+  // Searching starts no job, so only its requirements block it: a reviewed step 1 and a vector DB.
   const view = deriveStepView(status, 'query');
   const blocked = !status || Boolean(view.blockedBy);
   const vectorsAt = status?.steps?.vectors?.completed_at;
@@ -94,7 +95,7 @@ export default function QueryTab({ onNavigate }) {
         setResults(data.results || []);
         setSearchPerformed(true);
       } else {
-        setError({ kind: 'failed', detail: data.error });
+        setError({ kind: 'failed', detail: data.error, message: gateErrorMessage(t, data) });
       }
     } catch (err) {
       setError({ kind: 'failed', detail: err.message });
@@ -178,6 +179,7 @@ export default function QueryTab({ onNavigate }) {
             <Icon name="error" className="text-[22px] shrink-0" />
             <div className="min-w-0">
               <p className="m-0 font-bold">{t(error.kind === 'empty' ? 'query.err.empty' : 'query.err.title')}</p>
+              {error.message && <p className="m-0 mt-1 text-sm">{error.message}</p>}
               {error.detail && (
                 <details className="mt-1 text-sm">
                   <summary className="cursor-pointer">{t('action.details')}</summary>

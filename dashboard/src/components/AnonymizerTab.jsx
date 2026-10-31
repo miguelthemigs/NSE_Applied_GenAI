@@ -14,6 +14,7 @@ import {
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView, isMet } from '../utils/stepView';
 import { continueHintKey, DONE_CARD_STATES } from '../utils/doneMessage';
+import { gateErrorMessage } from '../utils/gateError';
 
 // Step 1 states in which an anonymised file exists on disk.
 const HAS_OUTPUT = new Set(['done', 'needs_review', 'unverified', 'stale']);
@@ -288,7 +289,7 @@ export default function AnonymizerTab({ onNavigate }) {
         }
       });
     } catch (err) {
-      setResult({ error: err.message });
+      setResult({ error: err.message, message: gateErrorMessage(t, err) });
     } finally {
       await finishRun(succeeded);
     }
@@ -421,7 +422,7 @@ export default function AnonymizerTab({ onNavigate }) {
         }
       });
     } catch (error) {
-      setResult({ error: error.message });
+      setResult({ error: error.message, message: gateErrorMessage(t, error) });
       setProgress(0);
     } finally {
       await finishRun(succeeded);
@@ -770,6 +771,7 @@ export default function AnonymizerTab({ onNavigate }) {
                 <Icon name="error" className="text-[22px] shrink-0" />
                 <div className="min-w-0">
                   <p className="m-0 font-bold">{t('anon.failed')}</p>
+                  {result.message && <p className="m-0 mt-1 text-sm">{result.message}</p>}
                   {result.errorKey ? (
                     <p className="m-0 mt-1 text-sm">{t(result.errorKey)}</p>
                   ) : (

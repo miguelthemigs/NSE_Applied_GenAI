@@ -116,6 +116,19 @@ describe('WriteSummaries', () => {
     expect(body.filter_dimensions).toEqual(['academic_year', 'location', 'programme'])
   })
 
+  it('a busy refusal (409 error.busy) names the running step and never POSTs precompute', async () => {
+    mockBackend({
+      'POST /api/llm-models/start-stream': () =>
+        jsonResponse({ status: 'error', code: 'error.busy', params: { step: 'vectors' }, error: 'Step vectors is still running' }, 409),
+    })
+    renderStep()
+    const button = await runButton()
+    await waitFor(() => expect(button).toBeEnabled())
+    await userEvent.click(button)
+    expect(await screen.findByText('Wacht tot stap 2 klaar is')).toBeVisible()
+    expect(calls('POST', '/api/precompute-insights')).toHaveLength(0)
+  })
+
   it('a start-stream error shows the translated message and never POSTs precompute', async () => {
     mockBackend({
       'POST /api/llm-models/start-stream': () => ndjson([{ status: 'error', code: 'error.llm_unavailable', error: 'exited early' }]),

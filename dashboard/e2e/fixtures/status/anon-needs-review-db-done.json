@@ -1,0 +1,54 @@
+{
+  "status": "success",
+  "last_updated": "2026-10-31T15:40:00Z",
+  "active_job": null,
+  "steps": {
+    "anonymize": {
+      "state": "needs_review",
+      "completed_at": "2026-10-31T14:12:00Z",
+      "summary": {
+        "rows": 300,
+        "removed": 409,
+        "review": 1,
+        "verified": true,
+        "acknowledged": false,
+        "by_type": {
+          "names": 288,
+          "locations": 16,
+          "numbers": 73,
+          "health": 32
+        },
+        "report_id": "2026-10-31T14:12:00"
+      }
+    },
+    "vectors": {
+      "state": "done",
+      "completed_at": "2026-10-31T14:31:00Z",
+      "summary": {
+        "documents": 900,
+        "tier": "balanced",
+        "model": "Octen/Octen-Embedding-0.6B"
+      },
+      "checkpoint": null
+    },
+    "rerank": {
+      "state": "not_started",
+      "completed_at": null,
+      "summary": null
+    },
+    "insights": {
+      "state": "not_started",
+      "completed_at": null,
+      "summary": {
+        "themes_done": 0,
+        "themes_total": 7,
+        "subthemes_done": 0,
+        "filtered_done": 0,
+        "filtered_total": 0
+      }
+    },
+    "query": {
+      "state": "ready"
+    }
+  }
+}

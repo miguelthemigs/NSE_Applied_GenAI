@@ -12,6 +12,11 @@ from unittest import mock
 
 from flask import Flask
 
+try:
+    import isolation  # noqa: F401
+except ImportError:  # run as tests.test_pipeline_status
+    from tests import isolation  # noqa: F401
+
 from src.config.themes import LOW_INFORMATION_THEME, THEMES_LIST
 from src.pipeline import jobs, state, status
 from src.pipeline.events import stream_event
@@ -716,22 +721,57 @@ class TrackedStreamTests(unittest.TestCase):
         self.assertIsNone(jobs.active_job())
         self.assertEqual(closed, [True])
 
-    def test_overlapping_streams_do_not_clear_each_other(self):
+    def test_second_stream_is_refused_while_one_runs(self):
         def source(n):
             for i in range(n):
                 yield stream_event("progress", stage="process", progress=i)
 
         first = jobs.tracked_stream("vectors", source(5))
         next(first)
-        second = jobs.tracked_stream("insights", source(5))
-        next(second)
-        self.assertEqual(jobs.active_job()["step"], "insights")
-        next(first)  # progress from the older stream must not touch the slot
-        self.assertEqual(jobs.active_job(), {"step": "insights", "stage": "process", "progress": 0})
+        second_source = source(5)
+        with self.assertRaises(jobs.JobBusy) as busy:
+            jobs.tracked_stream("insights", second_source)
+        self.assertEqual(busy.exception.step, "vectors")
+        # The running job's slot is not clobbered.
+        self.assertEqual(jobs.active_job(), {"step": "vectors", "stage": "process", "progress": 0})
+        next(first)
+        self.assertEqual(jobs.active_job()["progress"], 1)
         first.close()
-        self.assertEqual(jobs.active_job()["step"], "insights")
-        second.close()
         self.assertIsNone(jobs.active_job())
+        # Once the slot is free, the next stream may start.
+        third = jobs.tracked_stream("insights", source(1))
+        self.assertEqual(jobs.active_job()["step"], "insights")
+        third.close()
+        self.assertIsNone(jobs.active_job())
+
+    def test_slot_is_taken_before_the_first_event(self):
+        # The route must be able to refuse with 409 before it streams anything.
+        stream = jobs.tracked_stream("rerank", iter([]))
+        self.assertEqual(jobs.active_job(), {"step": "rerank", "stage": None, "progress": 0})
+        stream.close()
+        self.assertIsNone(jobs.active_job())
+
+    def test_never_iterated_stream_releases_slot_and_closes_source_on_close(self):
+        closed = []
+
+        def source():
+            try:
+                yield stream_event("progress", stage="process", progress=1)
+            finally:
+                closed.append(True)
+
+        src = source()
+        next(src)  # started, so close() runs its finally
+        stream = jobs.tracked_stream("anonymize", src)
+        stream.close()
+        self.assertIsNone(jobs.active_job())
+        self.assertEqual(closed, [True])
+
+    def test_try_start_is_atomic(self):
+        token = jobs.try_start("vectors")
+        self.assertIsNotNone(token)
+        self.assertIsNone(jobs.try_start("insights"))
+        self.assertEqual(jobs.active_job()["step"], "vectors")
 
     def test_exception_in_source_finishes_job(self):
         def source():

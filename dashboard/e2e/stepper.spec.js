@@ -27,9 +27,10 @@ test.describe('stepper and soft gating', () => {
     await expect(tabs.getByRole('tab')).toHaveCount(5)
     await expect(tabs.getByRole('tab', { name: STEP_NAMES[0] })).toHaveAttribute('aria-selected', 'true')
     await expect(tabs.getByRole('tab', { name: `${STEP_NAMES[1]} Eerst stap 1` })).toHaveAttribute('aria-selected', 'false')
-    await expect(tabs.getByRole('tab', { name: `${STEP_NAMES[2]} Eerst stap 2 · optioneel` })).toBeVisible()
-    await expect(tabs.getByRole('tab', { name: `${STEP_NAMES[3]} Eerst stap 2` })).toBeVisible()
-    await expect(tabs.getByRole('tab', { name: `${STEP_NAMES[4]} Eerst stap 2` })).toBeVisible()
+    // Steps 3 to 5 need step 1 too: they name the first step still to do.
+    await expect(tabs.getByRole('tab', { name: `${STEP_NAMES[2]} Eerst stap 1 · optioneel` })).toBeVisible()
+    await expect(tabs.getByRole('tab', { name: `${STEP_NAMES[3]} Eerst stap 1` })).toBeVisible()
+    await expect(tabs.getByRole('tab', { name: `${STEP_NAMES[4]} Eerst stap 1` })).toBeVisible()
     await noHorizontalScroll(page)
   })
 
@@ -37,7 +38,7 @@ test.describe('stepper and soft gating', () => {
     await mockApi({ '/api/pipeline/status': statusFixture('fresh'), ...ANON_ROUTES })
     await page.goto('/pipeline-demo?step=insights')
     await expect(visiblePanel(page).getByRole('heading', { name: STEP_NAMES[3] })).toBeVisible()
-    await expect(visiblePanel(page).getByRole('link', { name: 'Doe eerst stap 2: Antwoorden doorzoekbaar maken →' })).toBeVisible()
+    await expect(visiblePanel(page).getByRole('link', { name: 'Doe eerst stap 1: Persoonsgegevens verwijderen →' })).toBeVisible()
     const tabs = await stepTabs(page)
     await expect(tabs.getByRole('tab', { name: STEP_NAMES[3] })).toHaveAttribute('aria-selected', 'true')
 
@@ -67,6 +68,30 @@ test.describe('stepper and soft gating', () => {
     await expect(tabs.getByRole('tab', { name: `${STEP_NAMES[0]} 1 om na te kijken` })).toHaveAttribute('aria-selected', 'true')
     await selectStep(page, STEP_NAMES[1])
     await expect(visiblePanel(page).getByRole('button', { name: STEP_NAMES[1], exact: true })).toBeDisabled()
+  })
+
+  test('step 1 needs review with a built vector DB: steps 3, 4 and 5 stay gated on step 1', async ({ page, mockApi }) => {
+    await mockApi({
+      '/api/pipeline/status': statusFixture('anon-needs-review-db-done'),
+      '/api/filter-options': FILTER_OPTIONS,
+      '/api/insights/results': { rows: [], estimate: null },
+      '/api/status': { status: 'success' },
+      ...ANON_ROUTES,
+    })
+    await page.goto('/pipeline-demo?step=insights')
+    const panel = visiblePanel(page)
+    await expect(panel.getByRole('button', { name: STEP_NAMES[3], exact: true })).toBeDisabled()
+    await expect(panel.getByRole('link', { name: 'Doe eerst stap 1: Persoonsgegevens verwijderen →' })).toBeVisible()
+    const tabs = await stepTabs(page)
+    await expect(tabs.getByRole('tab', { name: `${STEP_NAMES[2]} Eerst stap 1 · optioneel` })).toBeVisible()
+    await expect(tabs.getByRole('tab', { name: `${STEP_NAMES[3]} Eerst stap 1` })).toBeVisible()
+    await expect(tabs.getByRole('tab', { name: `${STEP_NAMES[4]} Eerst stap 1` })).toBeVisible()
+
+    await selectStep(page, STEP_NAMES[2])
+    await expect(visiblePanel(page).getByRole('button', { name: STEP_NAMES[2], exact: true })).toBeDisabled()
+    await expect(visiblePanel(page).getByRole('button', { name: 'Stap overslaan' })).toBeDisabled()
+    await selectStep(page, STEP_NAMES[4])
+    await expect(visiblePanel(page).getByRole('link', { name: 'Doe eerst stap 1: Persoonsgegevens verwijderen →' })).toBeVisible()
   })
 
   test('everything done: opens step 5 and every step reads done', async ({ page, mockApi }) => {

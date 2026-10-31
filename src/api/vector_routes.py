@@ -2,37 +2,12 @@ from importlib import import_module
 
 from flask import Blueprint, Response, jsonify, request
 
-from src.pipeline import status as pipeline_status
+from src.api.guards import anonymize_gate, busy_response
+from src.pipeline import jobs
 
 vector_bp = Blueprint("vector", __name__)
 embedding = import_module("src.pipeline.02_embedding.service")
 retrieval = import_module("src.pipeline.03_retrieval.service")
-
-
-def _anonymize_gate():
-    """409 unless step 1 is `done` (D7).
-
-    Never embed answers whose anonymisation is unverified, still needs review,
-    is running, or does not exist. Fails closed when the status can't be built.
-    """
-    try:
-        anonymize_state = pipeline_status.build_pipeline_status()["steps"]["anonymize"]["state"]
-    except Exception as exc:
-        print(f"[BUILD-VECTORS GATE ERROR] {exc}")
-        anonymize_state = None
-    if anonymize_state == "done":
-        return None
-    return (
-        jsonify(
-            {
-                "status": "error",
-                "code": "error.blocked",
-                "params": {"step": "anonymize"},
-                "error": f"Step 1 (anonymize) is not done (state: {anonymize_state})",
-            }
-        ),
-        409,
-    )
 
 
 @vector_bp.route("/api/status", methods=["GET"])
@@ -42,7 +17,7 @@ def status():
 
 @vector_bp.route("/api/build-vectors", methods=["POST"])
 def build_vectors():
-    blocked = _anonymize_gate()
+    blocked = anonymize_gate("BUILD-VECTORS")
     if blocked is not None:
         return blocked
     try:
@@ -53,6 +28,8 @@ def build_vectors():
             allow_model_download=bool(data.get("allow_model_download", True)),
         )
         return Response(stream, mimetype="application/x-ndjson")
+    except jobs.JobBusy as exc:
+        return busy_response(exc)
     except FileNotFoundError as exc:
         return jsonify({"status": "error", "error": str(exc)}), 400
     except Exception as exc:
@@ -62,6 +39,9 @@ def build_vectors():
 
 @vector_bp.route("/api/rerank-theme-assignments", methods=["POST"])
 def rerank_theme_assignments():
+    blocked = anonymize_gate("RERANK-THEMES")
+    if blocked is not None:
+        return blocked
     try:
         data = request.get_json(silent=True) or {}
         max_documents = data.get("max_documents")
@@ -75,6 +55,8 @@ def rerank_theme_assignments():
             ),
         )
         return Response(stream, mimetype="application/x-ndjson")
+    except jobs.JobBusy as exc:
+        return busy_response(exc)
     except Exception as exc:
         print(f"[RERANK-THEMES ERROR] {str(exc)}")
         return jsonify({"status": "error", "error": str(exc)}), 500
@@ -99,6 +81,9 @@ def get_filter_options():
 
 @vector_bp.route("/api/query-vectors", methods=["GET"])
 def query_vectors():
+    blocked = anonymize_gate("QUERY")
+    if blocked is not None:
+        return blocked
     try:
         query_text = request.args.get("query", "").strip()
         top_k = min(int(request.args.get("n", 10)), 50)

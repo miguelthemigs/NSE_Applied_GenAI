@@ -2,7 +2,7 @@ import { PIPELINE_STEPS } from '../config/pipelineSteps'
 
 // A requirement is met when its step is done, skipped, or stale (stale data is
 // usable but marked). needs_review / unverified are deliberately NOT met: that
-// is the privacy gate in front of step 2.
+// is the privacy gate in front of steps 2 to 5.
 const MET = new Set(['done', 'skipped', 'stale'])
 // States that no longer need the user's attention when choosing where to open.
 const SETTLED = new Set(['done', 'skipped', 'ready'])
@@ -28,7 +28,8 @@ export function deriveStepView(status, stepId) {
   let state = stateOf(status, stepId)
   let blockedBy = (step?.requires ?? []).find((req) => !MET.has(stateOf(status, req))) ?? null
   if (status && state === 'blocked' && !blockedBy) blockedBy = step?.requires?.[0] ?? null // fail closed
-  if (status && blockedBy && state === 'not_started') state = 'blocked'
+  // 'ready' (step 5) means usable, which a gated step is not.
+  if (status && blockedBy && (state === 'not_started' || state === 'ready')) state = 'blocked'
   const canStart = Boolean(status) && !status.active_job && !blockedBy
   return { state, blockedBy: status ? blockedBy : null, canStart }
 }

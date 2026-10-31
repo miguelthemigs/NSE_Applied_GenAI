@@ -4,6 +4,7 @@ import json
 
 from flask import Blueprint, Response, jsonify, request
 
+from src.api.guards import anonymize_gate, busy_response
 from src.config.themes import THEMES_LIST
 from src.pipeline import jobs, model_downloads, state, status as pipeline_status
 
@@ -135,6 +136,9 @@ def _tracked_insights(stream):
 
 @insight_bp.route("/api/precompute-insights", methods=["POST"])
 def precompute_insights():
+    blocked = anonymize_gate("PRECOMPUTE-INSIGHTS")
+    if blocked is not None:
+        return blocked
     data = request.get_json(silent=True) or {}
     themes = data.get("themes") or [{"name": name} for name in THEMES_LIST]
 
@@ -146,8 +150,8 @@ def precompute_insights():
     filter_grid = _build_filter_grid(dimension_keys)
     precache_subthemes = bool(data.get("precache_subthemes", False))
 
-    return Response(
-        _tracked_insights(generation.precompute_insights_stream(
+    try:
+        stream = _tracked_insights(generation.precompute_insights_stream(
             themes=themes,
             # The step 4 button sends model_id, like start-stream; llm_model stays accepted.
             llm_model=data.get("model_id") or data.get("llm_model") or settings.DEFAULT_LLM_MODEL,
@@ -157,13 +161,17 @@ def precompute_insights():
             max_documents=max_documents,
             filter_grid=filter_grid,
             precache_subthemes=precache_subthemes,
-        )),
-        mimetype="application/x-ndjson",
-    )
+        ))
+    except jobs.JobBusy as exc:
+        return busy_response(exc)
+    return Response(stream, mimetype="application/x-ndjson")
 
 
 @insight_bp.route("/api/precompute-subthemes", methods=["POST"])
 def precompute_subthemes():
+    blocked = anonymize_gate("PRECOMPUTE-SUBTHEMES")
+    if blocked is not None:
+        return blocked
     data = request.get_json(silent=True) or {}
     themes = data.get("themes", [])
     if not themes:
@@ -176,8 +184,8 @@ def precompute_subthemes():
     dimension_keys = [str(d) for d in raw_dims if isinstance(d, str)]
     filter_grid = _build_filter_grid(dimension_keys)
 
-    return Response(
-        _tracked_insights(generation.precompute_subthemes_stream(
+    try:
+        stream = _tracked_insights(generation.precompute_subthemes_stream(
             themes=themes,
             llm_model=data.get("llm_model") or settings.DEFAULT_LLM_MODEL,
             allow_model_download=bool(data.get("allow_model_download", False)),
@@ -185,9 +193,10 @@ def precompute_subthemes():
             filters=_filters_from_payload(data),
             max_documents=max_documents,
             filter_grid=filter_grid,
-        )),
-        mimetype="application/x-ndjson",
-    )
+        ))
+    except jobs.JobBusy as exc:
+        return busy_response(exc)
+    return Response(stream, mimetype="application/x-ndjson")
 
 
 def _valid_combos(grid: list[dict]) -> list[dict]:
@@ -339,10 +348,16 @@ def start_llm_model_stream():
     except ValueError as exc:
         # Unknown id: not "model not downloaded", so not error.model_missing.
         return jsonify({"status": "error", "code": "error.backend", "error": f"Unknown model id: {model_name}. {exc}"}), 400
-    return Response(
-        generation.start_llm_stream(model_name, data.get("provider", settings.DEFAULT_LLM_PROVIDER)),
-        mimetype="application/x-ndjson",
-    )
+    try:
+        # A tracked step 4 job (a download can take long), but starting the
+        # model completes nothing: no on_success.
+        stream = jobs.tracked_stream(
+            "insights",
+            generation.start_llm_stream(model_name, data.get("provider", settings.DEFAULT_LLM_PROVIDER)),
+        )
+    except jobs.JobBusy as exc:
+        return busy_response(exc)
+    return Response(stream, mimetype="application/x-ndjson")
 
 
 @insight_bp.route("/api/themes-overview", methods=["GET"])

@@ -7,6 +7,7 @@ import { useI18n } from '../../../i18n/I18nProvider'
 import { postJson } from '../../../services/api'
 import { DONE_CARD_STATES, shortTier } from '../../../utils/doneMessage'
 import { downloadFromEvent, llmErrorKey } from '../../../utils/downloadProgress'
+import { gateErrorMessage } from '../../../utils/gateError'
 import { deriveStepView } from '../../../utils/stepView'
 import Icon from '../../Icon'
 import DoneCard from '../DoneCard'
@@ -75,7 +76,7 @@ export default function WriteSummaries({ onNavigate }) {
   const maxStage = useRef(-1)
   const [logs, setLogs] = useState([])
   const [download, setDownload] = useState(null)
-  const [runError, setRunError] = useState(null) // {key, detail}
+  const [runError, setRunError] = useState(null) // {key, message?, detail}
   const [rerunning, setRerunning] = useState(false) // settings instead of the Done card
   const [succeeded, setSucceeded] = useState(false)
   const [statusNotice, setStatusNotice] = useState(false)
@@ -92,9 +93,10 @@ export default function WriteSummaries({ onNavigate }) {
   const shownEstimate = combosOn && estimate?.key === comboKey ? estimate : null
 
   const log = (kind, text) => setLogs((prev) => [...prev, { kind, text }])
-  const fail = (key, detail) => {
-    setRunError({ key, detail })
-    log('error', t('ins.log.error', { reason: detail || t(key) }))
+  /** Show a failure: a translated key, or `message` (already translated, e.g. a 409 refusal). */
+  const fail = (key, detail, message = null) => {
+    setRunError({ key, message, detail })
+    log('error', t('ins.log.error', { reason: detail || message || t(key) }))
   }
   // A stream may report `load` again mid-run; the stage bar never moves backwards.
   const advanceStage = (next) => {
@@ -126,7 +128,7 @@ export default function WriteSummaries({ onNavigate }) {
     } catch (e) {
       if (e?.name === 'AbortError') return 'aborted'
       outcome = 'failed'
-      fail(llmErrorKey(e.code) ?? 'error.llm_unavailable', e.message)
+      fail(llmErrorKey(e.code) ?? 'error.llm_unavailable', e.message, gateErrorMessage(t, e))
     } finally {
       setDownload(null)
     }
@@ -198,7 +200,7 @@ export default function WriteSummaries({ onNavigate }) {
         return
       }
       errored = true
-      setRunError({ key: 'state.error', detail: e.message })
+      setRunError({ key: 'state.error', message: gateErrorMessage(t, e), detail: e.message })
       log('error', t('ins.log.connection', { reason: e.message }))
     }
     if (!ok && !errored) fail('state.error', '')
@@ -247,7 +249,7 @@ export default function WriteSummaries({ onNavigate }) {
               <div role="alert" className={errorBox}>
                 <Icon name="error" className="text-[22px] shrink-0" />
                 <div className="min-w-0">
-                  <p className="m-0 font-bold">{t(runError.key)}</p>
+                  <p className="m-0 font-bold">{runError.message ?? t(runError.key)}</p>
                   {runError.detail && (
                     <details className="mt-1 text-sm">
                       <summary className="cursor-pointer">{t('action.details')}</summary>

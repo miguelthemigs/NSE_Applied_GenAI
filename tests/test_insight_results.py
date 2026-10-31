@@ -4,6 +4,11 @@ from importlib import import_module
 import unittest
 from unittest import mock
 
+try:
+    import isolation  # noqa: F401
+except ImportError:  # run as tests.test_insight_results
+    from tests import isolation  # noqa: F401
+
 from src.api import insight_routes
 from src.config.themes import LOW_INFORMATION_THEME, THEMES_LIST
 from src.pipeline import jobs, model_downloads, status
@@ -76,6 +81,10 @@ class InsightResultsTests(unittest.TestCase):
         from app import create_app
 
         self._combos(18)
+        # The real filter options would read the user's vector DB.
+        options = mock.patch.object(insight_routes.retrieval, "filter_options_payload", return_value={"options": {}})
+        options.start()
+        self.addCleanup(options.stop)
         res = create_app().test_client().post("/api/precompute-preview", json={"filter_dimensions": ["location"]})
         self.assertEqual(res.get_json()["estimate"], {"count": 126, "minutes": 189})
         res = create_app().test_client().post("/api/precompute-preview", json={})
@@ -131,6 +140,15 @@ class RouteBehaviourTests(unittest.TestCase):
         from app import create_app
 
         self.client = create_app().test_client()
+        # Step 1 is done, so precompute gets past the anonymize gate.
+        gate = mock.patch.object(
+            status, "build_pipeline_status",
+            return_value={"status": "success", "steps": {"anonymize": {"state": "done"}}},
+        )
+        gate.start()
+        self.addCleanup(gate.stop)
+        jobs.finish_job()
+        self.addCleanup(jobs.finish_job)
 
     def test_precompute_without_themes_defaults_to_theme_list(self):
         with mock.patch.object(generation, "precompute_insights_stream", return_value=iter(["{}\n"])) as stream, \

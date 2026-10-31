@@ -9,7 +9,6 @@ import DoneCard from './pipeline/DoneCard';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 import { DONE_CARD_STATES } from '../utils/doneMessage';
-import { PIPELINE_STEPS } from '../config/pipelineSteps';
 import { DEFAULT_TIER, TIER_KEYS, isTier, modelFor } from '../config/modelTiers';
 import TierPicker from './pipeline/TierPicker';
 import AdvancedModelSelect from './pipeline/AdvancedModelSelect';
@@ -21,8 +20,7 @@ import {
 } from './pipeline/stepStyles';
 import { shortTier } from '../utils/doneMessage';
 import { downloadFromEvent, streamErrorKey } from '../utils/downloadProgress';
-
-const STEP_N = Object.fromEntries(PIPELINE_STEPS.map((s) => [s.id, s.n]));
+import { gateErrorMessage } from '../utils/gateError';
 
 export default function VectorDBBuilder({ onNavigate }) {
   const { t, formatNumber } = useI18n();
@@ -159,9 +157,9 @@ export default function VectorDBBuilder({ onNavigate }) {
         }
       });
     } catch (error) {
-      if (error?.code === 'error.blocked') {
-        const step = error.params?.step ?? 'anonymize';
-        setResult({ error: error.message, message: t('error.blocked', { n: STEP_N[step] ?? 1, name: t('step.' + step) }) });
+      const refused = gateErrorMessage(t, error);
+      if (refused) {
+        setResult({ error: error.message, message: refused });
       } else {
         setResult({ error: error.message });
         setLogs(prev => [...prev, error.message]);
