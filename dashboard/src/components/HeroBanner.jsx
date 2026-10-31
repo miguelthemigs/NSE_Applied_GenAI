@@ -1,5 +1,7 @@
 import { useMemo } from 'react'
 import { motion } from 'framer-motion'
+import { useI18n } from '../i18n/I18nProvider'
+import { themeLabel } from '../constants/realThemes'
 
 function AnimatedNumber({ value, label, icon, delay = 0 }) {
   return (
@@ -26,8 +28,9 @@ function AnimatedNumber({ value, label, icon, delay = 0 }) {
 }
 
 export default function HeroBanner({ themes }) {
+  const { t, formatNumber } = useI18n()
   const totalComments = useMemo(() => {
-    return themes.reduce((sum, t) => sum + (t.responseCount ?? t.percentage ?? 0), 0)
+    return themes.reduce((sum, th) => sum + (th.responseCount ?? th.percentage ?? 0), 0)
   }, [themes])
 
   const topTheme = useMemo(() => {
@@ -35,8 +38,10 @@ export default function HeroBanner({ themes }) {
     return [...themes].sort((a, b) => (b.responseCount ?? b.percentage) - (a.responseCount ?? a.percentage))[0]
   }, [themes])
 
+  const topName = topTheme ? themeLabel(t, topTheme.name) : ''
+
   const totalSubthemes = useMemo(() => {
-    return themes.reduce((sum, t) => sum + (t.subthemes?.length ?? 0), 0)
+    return themes.reduce((sum, th) => sum + (th.subthemes?.length ?? 0), 0)
   }, [themes])
 
   return (
@@ -87,7 +92,7 @@ export default function HeroBanner({ themes }) {
               >
                 insights
               </span>
-              Student Survey Dashboard
+              {t('overview.eyebrow')}
             </motion.p>
             <motion.h1
               initial={{ opacity: 0, x: -20 }}
@@ -95,7 +100,7 @@ export default function HeroBanner({ themes }) {
               transition={{ delay: 0.3, duration: 0.6 }}
               className="text-2xl md:text-3xl font-extrabold font-headline text-white leading-tight"
             >
-              NSE Insights Overview
+              {t('overview.title')}
             </motion.h1>
             <motion.p
               initial={{ opacity: 0 }}
@@ -103,8 +108,7 @@ export default function HeroBanner({ themes }) {
               transition={{ delay: 0.5 }}
               className="text-sm text-white/60 mt-2 max-w-md"
             >
-              Explore student open answers organized into {themes.length} themes,
-              with AI-powered analysis.
+              {t('overview.lead', { n: themes.length })}
             </motion.p>
 
           </div>
@@ -112,20 +116,20 @@ export default function HeroBanner({ themes }) {
           {/* Right: Stats */}
           <div className="flex flex-wrap gap-3">
             <AnimatedNumber
-              value={totalComments.toLocaleString()}
-              label="Comments"
+              value={formatNumber(totalComments)}
+              label={t('overview.stat.comments')}
               icon="forum"
               delay={0.4}
             />
             <AnimatedNumber
               value={themes.length}
-              label="Themes"
+              label={t('overview.stat.themes')}
               icon="category"
               delay={0.5}
             />
             <AnimatedNumber
               value={totalSubthemes}
-              label="Sub-themes"
+              label={t('overview.stat.subthemes')}
               icon="layers"
               delay={0.6}
             />
@@ -143,12 +147,10 @@ export default function HeroBanner({ themes }) {
                   trending_up
                 </span>
                 <span className="text-sm font-extrabold font-headline text-white text-center leading-tight">
-                  {topTheme.name.length > 18
-                    ? topTheme.name.slice(0, 16) + '…'
-                    : topTheme.name}
+                  {topName.length > 18 ? topName.slice(0, 16) + '…' : topName}
                 </span>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300/80">
-                  Top Theme
+                  {t('overview.stat.top')}
                 </span>
               </motion.div>
             )}

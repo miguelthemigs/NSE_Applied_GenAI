@@ -143,6 +143,13 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
     { id: 'deep', layers: ['presidio', 'eu-pii', 'openai-privacy-filter'] },
   ];
 
+  // Technical layer ids are shown as-is, under Advanced only.
+  const LAYER_OPTIONS = ['presidio', 'eu-pii', 'openai-privacy-filter'];
+
+  const toggleLayer = (id) => {
+    setSelectedLayers((prev) => (prev.includes(id) ? prev.filter((l) => l !== id) : [...prev, id]));
+  };
+
   const formatTimestamp = (ts) => {
     try { return formatDate(ts); } catch { return String(ts ?? ''); }
   };
@@ -379,7 +386,7 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
                       disabled={loading}
                       className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-indigo-700 transition-all disabled:opacity-50"
                     >
-                      {loading ? t('state.working') : t('anon.check.run')}
+                      {loading ? t('anon.check.running') : t('anon.check.run')}
                     </button>
                     <button
                       onClick={() => { if (typeof onNavigate === 'function') onNavigate('vectors'); }}
@@ -462,26 +469,48 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
                   <Icon name="tune" className="text-xl text-gray-500" />
                   {t('action.advanced')}
                 </summary>
-                <div className="space-y-3 pt-4" role="radiogroup" aria-label={t('anon.layers.title')}>
-                  <h3 className="font-bold text-gray-800 text-sm">{t('anon.layers.title')}</h3>
+                <fieldset className="space-y-3 pt-4">
+                  <legend className="font-bold text-gray-800 text-sm">{t('anon.layers.title')}</legend>
                   {LAYER_PRESETS.map((preset) => {
                     const active = preset.layers.length === selectedLayers.length
                       && preset.layers.every((layer) => selectedLayers.includes(layer));
                     return (
-                      <button
+                      <label
                         key={preset.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={active}
-                        onClick={() => setSelectedLayers(preset.layers)}
-                        className={`w-full p-3 rounded-xl border text-left transition-all ${active ? 'border-primary bg-primary/5 shadow-sm' : 'border-gray-100 bg-gray-50 hover:border-gray-300 hover:bg-white'}`}
+                        className={`block w-full p-3 rounded-xl border cursor-pointer text-left transition-all focus-within:ring-2 focus-within:ring-primary/40 ${active ? 'border-primary bg-primary/5 shadow-sm' : 'border-gray-100 bg-gray-50 hover:border-gray-300 hover:bg-white'}`}
                       >
+                        <input
+                          type="radio"
+                          name="anon-preset"
+                          value={preset.id}
+                          checked={active}
+                          onChange={() => setSelectedLayers(preset.layers)}
+                          className="sr-only"
+                        />
                         <span className={`block text-sm font-bold ${active ? 'text-primary' : 'text-gray-700'}`}>{t('anon.preset.' + preset.id)}</span>
                         <span className="block text-xs leading-snug text-gray-500 mt-0.5">{t('anon.preset.' + preset.id + '.lead')}</span>
-                      </button>
+                      </label>
                     );
                   })}
-                </div>
+                </fieldset>
+
+                <fieldset className="space-y-2 pt-4">
+                  <legend className="font-bold text-gray-800 text-sm">{t('anon.checks.title')}</legend>
+                  {LAYER_OPTIONS.map((id) => (
+                    <label key={id} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100 bg-white cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedLayers.includes(id)}
+                        onChange={() => toggleLayer(id)}
+                        className="mt-1"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-bold text-gray-700 font-mono">{id}</span>
+                        <span className="block text-xs text-gray-500 mt-0.5 leading-snug">{t('anon.layer.' + id)}</span>
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
               </details>
             </div>
 
@@ -833,7 +862,7 @@ export default function AnonymizerTab({ onComplete, onNavigate, existingAnonymiz
 
                 <div className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm text-gray-500">
                   <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  {t('anon.summary', { cells: formatNumber(result.stats.total_cells ?? 0), n: formatNumber(result.stats.total_entities ?? 0) })}
+                  {t(result.stats.verification_skipped ? 'anon.summary.skipped' : 'anon.summary', { cells: formatNumber(result.stats.total_cells ?? 0), n: formatNumber(result.stats.total_entities ?? 0) })}
                 </div>
               </div>
             )}

@@ -74,7 +74,7 @@ export default function DetailDrawer({ theme, onClose }) {
             </div>
           ) : liveData?.error ? (
             <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">
-              ⚠️ {liveData.error}
+              {liveData.error}
             </div>
           ) : liveData ? (
             <div className="space-y-4 animate-in fade-in duration-500">

@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { useI18n } from '../i18n/I18nProvider'
 
 export default function FilterDropdown({ icon, label, value, options, availableOptions, onChange }) {
+  const { t } = useI18n()
+  const show = (opt) => (opt === 'All' ? t('common.all') : opt)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const ref = useRef(null)
@@ -27,8 +30,9 @@ export default function FilterDropdown({ icon, label, value, options, availableO
   const filteredOptions = useMemo(() => {
     const query = search.trim().toLowerCase()
     if (!query) return options
-    return options.filter((opt) => String(opt).toLowerCase().includes(query))
-  }, [options, search])
+    return options.filter((opt) => String(show(opt)).toLowerCase().includes(query))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options, search, t])
 
   function isAvailable(opt) {
     if (!availableOptions) return true
@@ -59,7 +63,7 @@ export default function FilterDropdown({ icon, label, value, options, availableO
             {label}
           </span>
           <span className={`text-sm font-semibold truncate ${isActive ? 'text-white' : 'text-on-surface'}`}>
-            {value}
+            {show(value)}
           </span>
         </div>
         <span
@@ -83,7 +87,7 @@ export default function FilterDropdown({ icon, label, value, options, availableO
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   onClick={(e) => e.stopPropagation()}
-                  placeholder="Search..."
+                  placeholder={t('common.search')}
                   className="w-full pl-8 pr-2 py-1.5 text-sm rounded-lg bg-surface-container-low text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
@@ -105,7 +109,7 @@ export default function FilterDropdown({ icon, label, value, options, availableO
                       : 'text-on-surface-variant/35 cursor-default'
                   }`}
                 >
-                  <span>{opt}</span>
+                  <span>{show(opt)}</span>
                   <span className="flex items-center gap-1">
                     {!available && (
                       <span className="material-symbols-outlined text-xs opacity-40">block</span>
@@ -118,7 +122,7 @@ export default function FilterDropdown({ icon, label, value, options, availableO
               )
             })
           ) : (
-            <p className="px-4 py-3 text-sm text-on-surface-variant/60 italic">No matches found</p>
+            <p className="px-4 py-3 text-sm text-on-surface-variant/60 italic">{t('common.noMatches')}</p>
           )}
           </div>
         </div>

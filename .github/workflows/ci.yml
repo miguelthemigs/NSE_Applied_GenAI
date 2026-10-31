@@ -51,8 +51,7 @@ jobs:
         run: npm run lint
 
       - name: Copy check
-        # Scoped to the converted files until Task 7b widens it to all of src/
-        run: npm run check:copy -- --files src/pages/PipelineDemo.jsx src/components/AnonymizerTab.jsx
+        run: npm run check:copy
 
       - name: Test
         run: npm test

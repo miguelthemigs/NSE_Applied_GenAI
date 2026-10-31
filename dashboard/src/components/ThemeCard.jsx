@@ -1,6 +1,8 @@
 import { Link, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { getThemeColor } from '../constants/themeColors'
+import { themeLabel, themeText } from '../constants/realThemes'
+import { useI18n } from '../i18n/I18nProvider'
 
 function MiniDonutChart({ subthemeMentions, accentColor }) {
   if (!subthemeMentions || subthemeMentions.length === 0) return null
@@ -62,6 +64,10 @@ function MiniDonutChart({ subthemeMentions, accentColor }) {
 
 export default function ThemeCard({ theme, size, filters, index = 0 }) {
   const location = useLocation()
+  const { t } = useI18n()
+  const name = themeLabel(t, theme.name)
+  const subtag = themeText(t, theme.name, 'subtag', theme.subtag)
+  const description = themeText(t, theme.name, 'desc', theme.description)
   const transition = { type: 'spring', stiffness: 300, damping: 30 }
   const subthemeMentions = theme.cachedInsight?.subtheme_mentions || theme.subtheme_mentions || []
   const colors = getThemeColor(theme.id)
@@ -126,7 +132,7 @@ export default function ThemeCard({ theme, size, filters, index = 0 }) {
                   border: `1px solid ${colors.border}`,
                 }}
               >
-                {theme.responseCount ?? theme.percentage} comments
+                {t('overview.card.comments', { n: theme.responseCount ?? theme.percentage })}
               </span>
             </div>
             {/* SVG Pie Chart */}
@@ -136,14 +142,14 @@ export default function ThemeCard({ theme, size, filters, index = 0 }) {
             <h3
               className="text-lg md:text-xl font-bold font-headline text-on-surface transition-colors"
             >
-              {theme.name}
+              {name}
             </h3>
-            {theme.subtag && (
-              <p className="text-xs text-on-surface-variant/80 mt-1">{theme.subtag}</p>
+            {subtag && (
+              <p className="text-xs text-on-surface-variant/80 mt-1">{subtag}</p>
             )}
-            {theme.description && (
+            {description && (
               <p className="text-xs leading-relaxed text-on-surface-variant mt-3 line-clamp-2">
-                {theme.description}
+                {description}
               </p>
             )}
           </div>
@@ -198,7 +204,7 @@ export default function ThemeCard({ theme, size, filters, index = 0 }) {
                 border: `1px solid ${colors.border}`,
               }}
             >
-              {theme.responseCount ?? theme.percentage} comments
+              {t('overview.card.comments', { n: theme.responseCount ?? theme.percentage })}
             </span>
           </div>
           {/* Mini SVG Pie Chart */}
@@ -208,15 +214,15 @@ export default function ThemeCard({ theme, size, filters, index = 0 }) {
           <h3
             className="text-sm font-bold font-headline leading-tight text-on-surface transition-colors"
           >
-            {theme.name}
+            {name}
           </h3>
-          {theme.subtag && (
-            <p className="text-[10px] text-on-surface-variant/70 mt-0.5">{theme.subtag}</p>
+          {subtag && (
+            <p className="text-[10px] text-on-surface-variant/70 mt-0.5">{subtag}</p>
           )}
 
-          {theme.description && (
+          {description && (
             <p className="text-[10px] leading-snug text-on-surface-variant mt-2 line-clamp-2">
-              {theme.description}
+              {description}
             </p>
           )}
         </div>

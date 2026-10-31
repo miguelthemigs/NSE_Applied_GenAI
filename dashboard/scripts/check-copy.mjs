@@ -1,23 +1,16 @@
 // Fails (exit 1) when JSX under src/components or src/pages contains a banned
-// literal or an emoji. All user-visible copy must go through t().
+// literal, an emoji, or the glyphs U+2713 and U+00D7 (use <Icon> instead). All user-visible copy must go through t().
 // Usage: node scripts/check-copy.mjs [--files path1 path2 ...]
+// (--files needs at least one path, otherwise exit 2.)
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { BANNED } from './banned-copy.mjs'
 
 const ROOT = process.cwd()
 const SCAN_DIRS = ['src/components', 'src/pages']
-const BANNED = [
-  'Drop your CSV',
-  'Vorige run',
-  'Check uitvoeren',
-  'Overslaan',
-  'not_run',
-  'Launch ',
-  'Vector DB',
-  'Reranker',
-  'Processing Stream',
-]
-const EMOJI = /\p{Extended_Pictographic}/u
+// Copyright and registered signs are Extended_Pictographic but are not emoji.
+const EMOJI = /(?![\u00A9\u00AE])\p{Extended_Pictographic}/u
+const GLYPHS = ['\u2713', '\u00D7']
 
 function walk(dir) {
   const out = []
@@ -31,10 +24,16 @@ function walk(dir) {
 
 const args = process.argv.slice(2)
 const filesIdx = args.indexOf('--files')
-const files =
-  filesIdx >= 0
-    ? args.slice(filesIdx + 1).filter((a) => !a.startsWith('--'))
-    : SCAN_DIRS.flatMap((d) => walk(join(ROOT, d)))
+let files
+if (filesIdx >= 0) {
+  files = args.slice(filesIdx + 1).filter((a) => !a.startsWith('--'))
+  if (files.length === 0) {
+    console.error('check-copy: --files needs at least one path. Usage: check-copy.mjs [--files path1 path2 ...]')
+    process.exit(2)
+  }
+} else {
+  files = SCAN_DIRS.flatMap((d) => walk(join(ROOT, d)))
+}
 
 function isLiteralHit(line, banned) {
   for (let i = line.indexOf(banned); i >= 0; i = line.indexOf(banned, i + 1)) {
@@ -50,6 +49,7 @@ for (const f of files) {
     // not part of a longer identifier (e.g. the ThemeReranker component name)
     const why = BANNED.filter((b) => line.includes(b) && isLiteralHit(line, b)).map((b) => `"${b}"`)
     if (EMOJI.test(line)) why.push('emoji')
+    for (const g of GLYPHS) if (line.includes(g)) why.push(`glyph U+${g.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`)
     if (why.length) {
       hits += 1
       console.log(`${relative(ROOT, f)}:${i + 1}: ${why.join(', ')}`)

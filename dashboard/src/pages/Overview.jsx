@@ -5,7 +5,9 @@ import FilterDropdown from '../components/FilterDropdown'
 import HeroBanner from '../components/HeroBanner'
 import SubthemeWordCloud from '../components/SubthemeWordCloud'
 import { Link } from 'react-router-dom'
+import Icon from '../components/Icon'
 import { getJson, OfflineError } from '../services/api'
+import { useI18n } from '../i18n/I18nProvider'
 import { LayoutGroup, motion } from 'framer-motion'
 import { parseThemesOverview } from '../utils/overviewResponse'
 import { LOCATION_OPTIONS } from '../constants/locations'
@@ -21,6 +23,7 @@ import {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Overview() {
+  const { t } = useI18n()
   const [searchParams, setSearchParams] = useSearchParams()
   const filters = useMemo(() => filtersFromSearchParams(searchParams), [searchParams])
 
@@ -59,6 +62,7 @@ export default function Overview() {
   const [dynamicThemesData, setDynamicThemesData] = useState({})
   const [overviewMeta, setOverviewMeta] = useState(null)
   const [overviewKind, setOverviewKind] = useState('ok')
+  const [overviewDetail, setOverviewDetail] = useState(null)
   const [loadingThemes, setLoadingThemes] = useState(true)
   
   // Fetch dynamic theme data using the same canonical filter mapping as detail pages.
@@ -76,6 +80,7 @@ export default function Overview() {
       .then(result => {
         const parsed = parseThemesOverview(result)
         setOverviewKind(parsed.kind)
+        setOverviewDetail(parsed.kind === 'error' ? (result?.data?.error ?? result?.data?.message ?? null) : null)
         setDynamicThemesData(parsed.themes)
         setOverviewMeta(
           parsed.kind === 'ok'
@@ -153,7 +158,7 @@ export default function Overview() {
           <div className="flex-1 min-w-[130px]">
             <FilterDropdown
               icon="calendar_today"
-              label="Academic Year"
+              label={t('overview.f.year')}
               value={filters.jaar}
               options={['All', ...filterOptions.academic_years]}
               availableOptions={availableFilterOptions ? ['All', ...availableFilterOptions.academic_years] : null}
@@ -163,7 +168,7 @@ export default function Overview() {
           <div className="flex-1 min-w-[130px]">
             <FilterDropdown
               icon="location_on"
-              label="Location"
+              label={t('overview.f.location')}
               value={filters.locatie}
               options={LOCATION_OPTIONS}
               availableOptions={availableFilterOptions ? ['All', ...availableFilterOptions.locations] : null}
@@ -173,7 +178,7 @@ export default function Overview() {
           <div className="flex-1 min-w-[130px]">
             <FilterDropdown
               icon="school"
-              label="Programme"
+              label={t('overview.f.programme')}
               value={filters.opleiding}
               options={['All', ...filterOptions.programmes]}
               availableOptions={availableFilterOptions ? ['All', ...availableFilterOptions.programmes] : null}
@@ -183,7 +188,7 @@ export default function Overview() {
           <div className="flex-1 min-w-[130px]">
             <FilterDropdown
               icon="history_edu"
-              label="Study Mode"
+              label={t('overview.f.studyMode')}
               value={filters.studievorm}
               options={['All', ...filterOptions.study_modes]}
               availableOptions={availableFilterOptions ? ['All', ...availableFilterOptions.study_modes] : null}
@@ -193,7 +198,7 @@ export default function Overview() {
           <div className="flex-1 min-w-[130px]">
             <FilterDropdown
               icon="translate"
-              label="Language"
+              label={t('overview.f.language')}
               value={filters.taal}
               options={['All', ...filterOptions.languages]}
               availableOptions={availableFilterOptions ? ['All', ...availableFilterOptions.languages] : null}
@@ -206,8 +211,8 @@ export default function Overview() {
             onClick={clearFilters}
             className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors"
           >
-            <span className="material-symbols-outlined text-sm">filter_alt_off</span>
-            Clear all filters
+            <Icon name="filter_alt_off" className="text-sm" />
+            {t('overview.clearFilters')}
           </button>
         )}
       </motion.div>
@@ -218,85 +223,80 @@ export default function Overview() {
           <div className="flex items-end justify-between mb-5">
             <div>
               <h2 className="text-2xl font-bold font-headline text-primary">
-                Theme Frequency Insights
+                {t('overview.themesTitle')}
               </h2>
             </div>
           </div>
 
           {loadingThemes ? (
             <div className="bg-surface-container-lowest rounded-2xl p-8 text-center shadow-ambient border border-outline-variant/10">
-              <span className="material-symbols-outlined text-4xl text-outline mb-3 block animate-pulse">
-                hourglass_empty
-              </span>
+              <Icon name="hourglass_empty" className="text-4xl text-outline mb-3 block animate-pulse" />
               <h3 className="text-lg font-bold font-headline text-primary">
-                Loading real theme data
+                {t('overview.loading')}
               </h3>
             </div>
           ) : overviewKind === 'no_summaries' ? (
             <div className="bg-surface-container-lowest rounded-2xl p-8 md:p-14 text-center shadow-ambient border border-outline-variant/10 flex flex-col items-center gap-3">
-              <span className="material-symbols-outlined text-4xl text-primary mb-1 block">description</span>
+              <Icon name="description" className="text-4xl text-primary mb-1 block" />
               <h3 className="text-2xl font-bold font-headline text-primary">
-                {/* TODO(i18n): t('overview.empty') */}
-                Er zijn nog geen samenvattingen
+                {t('overview.empty')}
               </h3>
               <p className="text-sm text-on-surface-variant max-w-[520px]">
-                {/* TODO(i18n): t('overview.emptyBody') */}
-                De antwoorden zijn verwerkt, maar de AI heeft nog geen samenvattingen geschreven. Zodra stap 4 klaar is, zie je hier de thema's met hun aantallen.
+                {t('overview.emptyBody')}
               </p>
               <Link
                 to="/pipeline-demo?step=insights"
                 className="mt-2 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"
               >
-                {/* TODO(i18n): t('overview.emptyAction') */}
-                Ga naar stap 4: Samenvattingen schrijven
-                <span className="material-symbols-outlined text-base">arrow_forward</span>
+                {t('overview.emptyAction')}
+                <Icon name="arrow_forward" className="text-base" />
               </Link>
             </div>
           ) : overviewKind === 'not_ready' || overviewKind === 'offline' || overviewKind === 'error' ? (
             <div className="bg-surface-container-lowest rounded-2xl p-8 text-center shadow-ambient border border-outline-variant/10">
-              <span className="material-symbols-outlined text-4xl text-outline mb-3 block">
-                {overviewKind === 'not_ready' ? 'hourglass_empty' : 'cloud_off'}
-              </span>
+              <Icon
+                name={overviewKind === 'not_ready' ? 'hourglass_empty' : overviewKind === 'error' ? 'error' : 'cloud_off'}
+                className="text-4xl text-outline mb-3 block"
+              />
               <p className="text-sm text-on-surface-variant" role="status">
-                {overviewKind === 'not_ready' && (
-                  /* TODO(i18n): t('overview.notReady') */
-                  'De gegevens worden nog voorbereid. Rond stap 2 af en probeer het opnieuw.'
-                )}
-                {overviewKind !== 'not_ready' && (
-                  /* TODO(i18n): t('overview.offline') */
-                  'De analyse-service is niet bereikbaar. Start de app opnieuw.'
-                )}
+                {overviewKind === 'not_ready'
+                  ? t('overview.notReady')
+                  : overviewKind === 'error'
+                    ? t('overview.error')
+                    : t('overview.offline')}
               </p>
+              {overviewKind === 'error' && overviewDetail && (
+                <details className="mt-3 text-xs text-on-surface-variant">
+                  <summary className="cursor-pointer">{t('action.details')}</summary>
+                  <p className="mt-1 break-words">{String(overviewDetail)}</p>
+                </details>
+              )}
             </div>
           ) : hasNoMatchingResponses ? (
             <div className="bg-surface-container-lowest rounded-2xl p-8 text-center shadow-ambient border border-outline-variant/10">
-              <span className="material-symbols-outlined text-4xl text-outline mb-3 block">
-                filter_alt_off
-              </span>
+              <Icon name="filter_alt_off" className="text-4xl text-outline mb-3 block" />
               <h3 className="text-lg font-bold font-headline text-primary">
-                No responses match this filter combination
+                {t('overview.noMatch.title')}
               </h3>
               <p className="text-sm text-on-surface-variant mt-2">
-                Try removing one filter or clear everything to return to the full dashboard.
+                {t('overview.noMatch.body')}
               </p>
               <button
                 onClick={clearFilters}
                 className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white hover:bg-primary/90 transition-colors"
               >
-                <span className="material-symbols-outlined text-base">refresh</span>
-                Clear filters
+                <Icon name="refresh" className="text-base" />
+                {t('overview.noMatch.action')}
               </button>
             </div>
           ) : !hasThemePayload || !hasFilteredThemeData ? (
             <div className="bg-surface-container-lowest rounded-2xl p-8 text-center shadow-ambient border border-outline-variant/10">
-              <span className="material-symbols-outlined text-4xl text-outline mb-3 block">
-                database_off
-              </span>
+              <Icon name="database_off" className="text-4xl text-outline mb-3 block" />
               <h3 className="text-lg font-bold font-headline text-primary">
-                No real theme insights available
+                {t('overview.empty')}
               </h3>
               <p className="text-sm text-on-surface-variant mt-2">
-                Run insight generation for this filter set to populate the dashboard.
+                {t('overview.emptyAction')}
               </p>
             </div>
           ) : (

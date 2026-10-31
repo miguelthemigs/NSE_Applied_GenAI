@@ -11,7 +11,8 @@ import { useThemeSummary } from "../hooks/useThemeSummary";
 import FilterDropdown from "../components/FilterDropdown";
 import { LOCATION_OPTIONS } from "../constants/locations";
 import { getThemeColor } from "../constants/themeColors";
-import { buildRealTheme, REAL_THEME_META, THEME_NAME_BY_ID } from "../constants/realThemes";
+import { buildRealTheme, REAL_THEME_META, THEME_NAME_BY_ID, themeLabel } from "../constants/realThemes";
+import { useI18n } from "../i18n/I18nProvider";
 import { motion } from "framer-motion";
 import { apiUrl } from "../services/api";
 import {
@@ -858,6 +859,7 @@ function QuickStats({ activeData, accentColor }) {
 // MAIN PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ViewMorePage() {
+  const { t } = useI18n();
   const { id, subthemeName } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -1116,7 +1118,7 @@ export default function ViewMorePage() {
                 }
                 className="hover:text-on-surface transition-colors focus:outline-none bg-transparent border-none p-0 cursor-pointer font-semibold text-on-surface-variant/70"
               >
-                {theme.name}
+                {themeLabel(t, theme.name)}
               </button>
               <span className="material-symbols-outlined text-xs text-outline select-none">
                 chevron_right
@@ -1127,7 +1129,7 @@ export default function ViewMorePage() {
             </>
           ) : (
             <span className="font-bold" style={{ color: colors.accent }}>
-              {theme.name}
+              {themeLabel(t, theme.name)}
             </span>
           )}
         </motion.div>
@@ -1242,7 +1244,7 @@ export default function ViewMorePage() {
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-white/60 mb-1">
                     {activeData.isSubtheme
-                      ? `Sub-theme of ${theme.name}`
+                      ? `Sub-theme of ${themeLabel(t, theme.name)}`
                       : "Theme detail"}
                   </p>
                   <h1 className="text-2xl md:text-4xl font-bold font-headline leading-tight">

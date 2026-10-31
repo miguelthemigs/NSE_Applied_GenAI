@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNdjsonStream } from '../hooks/useNdjsonStream';
 import { apiUrl } from '../services/api';
+import { useI18n } from '../i18n/I18nProvider';
 
+const DONE_STATUSES = new Set(['ready', 'completed', 'success', 'done']);
 const DEFAULT_RERANKER = 'zeroentropy/zerank-2-reranker';
 
 export default function ThemeReranker({ onSuccess }) {
+  const { t, formatNumber } = useI18n();
   const stream = useNdjsonStream();
   const [status, setStatus] = useState(null);
   const [rerankerModel, setRerankerModel] = useState(DEFAULT_RERANKER);
@@ -13,6 +16,7 @@ export default function ThemeReranker({ onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentStage, setCurrentStage] = useState('');
+  const [logs, setLogs] = useState([]);
   const [result, setResult] = useState(null);
 
   useEffect(() => {
@@ -22,7 +26,7 @@ export default function ThemeReranker({ onSuccess }) {
         const data = await res.json();
         if (data.status === 'success') setStatus(data);
       } catch (e) {
-        setStatus({ error: 'Could not connect to the backend.' });
+        setStatus({ error: 'connect' });
       }
     };
     fetchStatus();
@@ -31,7 +35,8 @@ export default function ThemeReranker({ onSuccess }) {
   const handleRerank = async () => {
     setLoading(true);
     setProgress(0);
-    setCurrentStage('Preparing reranker pass...');
+    setCurrentStage('');
+    setLogs([]);
     setResult(null);
 
     try {
@@ -47,21 +52,20 @@ export default function ThemeReranker({ onSuccess }) {
         onEvent: (data) => {
           if (data.status === 'progress') {
             if (data.progress !== undefined) setProgress(data.progress);
-            if (data.message) setCurrentStage(data.message);
+            if (data.stage) setCurrentStage(data.stage);
+            if (data.message) setLogs(prev => [...prev, data.message]);
           } else if (data.status === 'success') {
             setResult(data);
             setProgress(100);
-            setCurrentStage('Reranker assignments finalized.');
+            setCurrentStage('save');
             setTimeout(() => onSuccess?.(), 1200);
           } else if (data.status === 'error') {
             setResult({ error: data.error });
-            setCurrentStage('Reranker failed.');
           }
         }
       });
     } catch (error) {
       setResult({ error: error.message });
-      setCurrentStage('Reranker failed.');
     } finally {
       setLoading(false);
     }
@@ -78,8 +82,8 @@ export default function ThemeReranker({ onSuccess }) {
           </svg>
         </div>
         <div>
-          <h2 className="text-3xl font-extrabold tracking-tight text-gray-900">Theme Reranker</h2>
-          <p className="text-gray-500 text-sm mt-1">Resolve embedding-ambiguous rows into one final theme assignment</p>
+          <h2 className="text-3xl font-extrabold tracking-tight text-gray-900">{t('step.rerank')}</h2>
+          <p className="text-gray-500 text-sm mt-1">{t('step.rerank.lead')}</p>
         </div>
       </div>
 
@@ -87,37 +91,20 @@ export default function ThemeReranker({ onSuccess }) {
         <div className="space-y-6">
           {!vectorReady && (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
-              Build the vector database before running the reranker stage.
+              {t('gate.reason', { n: 2, name: t('step.vectors') })}
             </div>
           )}
 
           {vectorReady && (
-            <div className="grid md:grid-cols-3 gap-4">
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Vector DB</p>
-                <p className="text-lg font-black text-slate-900 mt-1">Ready</p>
-              </div>
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Reranker Status</p>
-                <p className="text-lg font-black text-slate-900 mt-1">{status?.theme_reranker_status || 'not_run'}</p>
-              </div>
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Current Model</p>
-                <p className="text-sm font-black text-slate-900 mt-2 break-words">{status?.theme_reranker_model || 'disabled'}</p>
-              </div>
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('rerank.status')}</p>
+              <p className="text-lg font-black text-slate-900 mt-1">
+                {DONE_STATUSES.has(status?.theme_reranker_status) ? t('state.done') : t('state.not_started')}
+              </p>
             </div>
           )}
 
           <div className="space-y-4 p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
-            <label className="block">
-              <span className="text-sm font-bold text-gray-800">Reranker model</span>
-              <input
-                value={rerankerModel}
-                onChange={(e) => setRerankerModel(e.target.value)}
-                className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </label>
-
             <div className="grid md:grid-cols-2 gap-4">
               <label className="flex items-start gap-3 p-4 bg-gray-50 border border-gray-100 rounded-xl cursor-pointer">
                 <input
@@ -127,33 +114,48 @@ export default function ThemeReranker({ onSuccess }) {
                   className="mt-1"
                 />
                 <div>
-                  <p className="text-sm font-bold text-gray-800">Download model if missing</p>
-                  <p className="text-xs text-gray-500 mt-1">Disable this for cached-only reranker tests.</p>
+                  <p className="text-sm font-bold text-gray-800">{t('vec.download.title')}</p>
+                  <p className="text-xs text-gray-500 mt-1">{t('rerank.download.lead')}</p>
                 </div>
               </label>
 
               <label className="block p-4 bg-gray-50 border border-gray-100 rounded-xl">
-                <span className="text-sm font-bold text-gray-800">Max documents</span>
+                <span className="text-sm font-bold text-gray-800">{t('rerank.max.title')}</span>
                 <input
                   value={maxDocuments}
                   onChange={(e) => setMaxDocuments(e.target.value.replace(/[^\d]/g, ''))}
-                  placeholder="All ambiguous rows"
+                  placeholder={t('rerank.max.placeholder')}
                   className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </label>
             </div>
+
+            <details>
+              <summary className="text-sm font-bold text-gray-800 cursor-pointer">{t('action.advanced')}</summary>
+              <label className="block mt-3">
+                <span className="text-sm font-bold text-gray-800">{t('rerank.model')}</span>
+                <input
+                  value={rerankerModel}
+                  onChange={(e) => setRerankerModel(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                {status?.theme_reranker_model && (
+                  <span className="block mt-1 text-xs text-gray-500 break-words">{status.theme_reranker_model}</span>
+                )}
+              </label>
+            </details>
           </div>
 
           <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
             <div className="text-sm text-gray-600">
-              Embedding-confident rows stay assigned; only ambiguous rows are checked.
+              {t('rerank.hint')}
             </div>
             <button
               onClick={handleRerank}
               disabled={!vectorReady || loading}
               className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-sky-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 disabled:opacity-50 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300"
             >
-              Run Reranker
+              {t('rerank.start')}
             </button>
           </div>
         </div>
@@ -166,13 +168,19 @@ export default function ThemeReranker({ onSuccess }) {
           </div>
           <div className="relative z-10 space-y-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-white">Resolving Theme Assignments</h3>
+              <h3 className="text-xl font-bold text-white">{t('state.working')}</h3>
               <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-sky-300">{progress}%</span>
             </div>
             <div className="p-4 bg-black/40 rounded-xl border border-white/5">
-              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">System Status</p>
-              <p className="text-sky-300 font-mono text-sm">{currentStage}</p>
+              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">{t('rerank.status')}</p>
+              <p className="text-sky-300 font-mono text-sm">{currentStage ? t('stage.' + currentStage) : t('state.working')}</p>
             </div>
+            <details className="p-4 bg-black/40 rounded-xl border border-white/5">
+              <summary className="text-xs text-gray-400 font-semibold uppercase tracking-wider cursor-pointer">{t('action.details')}</summary>
+              <div className="mt-2 max-h-40 overflow-y-auto text-gray-300 text-xs font-mono space-y-1">
+                {logs.map((line, i) => <div key={i}>{line}</div>)}
+              </div>
+            </details>
           </div>
         </div>
       )}
@@ -180,31 +188,37 @@ export default function ThemeReranker({ onSuccess }) {
       {result && !loading && (
         <div className={`p-6 rounded-2xl ${result.error ? 'bg-red-50 border border-red-100' : 'bg-emerald-50 border border-emerald-100'}`}>
           <h4 className={`text-lg font-bold ${result.error ? 'text-red-900' : 'text-emerald-900'}`}>
-            {result.error ? 'Reranker Failed' : 'Final Theme Assignments Ready'}
+            {result.error ? t('rerank.failed') : t('state.done')}
           </h4>
-          <p className={`mt-1 ${result.error ? 'text-red-700' : 'text-emerald-700'}`}>
-            {result.error || 'Ambiguous embedding candidates were resolved to one final theme per response.'}
-          </p>
-
-          {!result.error && (
-            <div className="mt-6 grid md:grid-cols-4 gap-4">
-              <div className="bg-white/60 p-4 rounded-xl">
-                <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">Reranked</p>
-                <p className="text-2xl font-black text-emerald-700 mt-1">{result.reranked_documents}</p>
+          {result.error ? (
+            <details className="mt-2 text-sm text-red-700">
+              <summary className="cursor-pointer">{t('action.details')}</summary>
+              <p className="mt-1 break-words">{result.error}</p>
+            </details>
+          ) : (
+            <>
+              <p className="mt-1 text-emerald-700">
+                {t('done.rerank', {
+                  checked: formatNumber(result.reranked_documents ?? 0),
+                  changed: formatNumber(result.changed_primary ?? 0),
+                  lowinfo: formatNumber(result.low_information_reassigned ?? 0),
+                })}
+              </p>
+              <div className="mt-6 grid md:grid-cols-3 gap-4">
+                <div className="bg-white/60 p-4 rounded-xl">
+                  <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">{t('rerank.done.reread')}</p>
+                  <p className="text-2xl font-black text-emerald-700 mt-1">{result.reranked_documents}</p>
+                </div>
+                <div className="bg-white/60 p-4 rounded-xl">
+                  <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">{t('rerank.done.changed')}</p>
+                  <p className="text-2xl font-black text-emerald-700 mt-1">{result.changed_primary}</p>
+                </div>
+                <div className="bg-white/60 p-4 rounded-xl">
+                  <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">{t('rerank.done.lowinfo')}</p>
+                  <p className="text-2xl font-black text-emerald-700 mt-1">{result.low_information_reassigned}</p>
+                </div>
               </div>
-              <div className="bg-white/60 p-4 rounded-xl">
-                <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">Changed</p>
-                <p className="text-2xl font-black text-emerald-700 mt-1">{result.changed_primary}</p>
-              </div>
-              <div className="bg-white/60 p-4 rounded-xl">
-                <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">Low Info</p>
-                <p className="text-2xl font-black text-emerald-700 mt-1">{result.low_information_reassigned}</p>
-              </div>
-              <div className="bg-white/60 p-4 rounded-xl">
-                <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">Model</p>
-                <p className="text-xs font-black text-emerald-700 mt-2 break-words">{result.reranker_model}</p>
-              </div>
-            </div>
+            </>
           )}
         </div>
       )}

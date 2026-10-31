@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { apiUrl } from '../services/api';
+import { useI18n } from '../i18n/I18nProvider';
+import Icon from './Icon';
 
 export default function QueryTab() {
+  const { t, formatNumber } = useI18n();
   const [query, setQuery] = useState('');
   const [institution, setInstitution] = useState('all');
   const [year, setYear] = useState('all');
@@ -48,7 +51,7 @@ export default function QueryTab() {
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) {
-      setError('Please enter a search query');
+      setError({ kind: 'empty' });
       return;
     }
 
@@ -81,10 +84,10 @@ export default function QueryTab() {
         setResults(data.results || []);
         setSearchPerformed(true);
       } else {
-        setError(data.error || 'Search failed');
+        setError({ kind: 'failed', detail: data.error });
       }
     } catch (err) {
-      setError(err.message);
+      setError({ kind: 'failed', detail: err.message });
     } finally {
       setLoading(false);
     }
@@ -93,8 +96,8 @@ export default function QueryTab() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold">✨ Query Vector Database</h2>
-        <p className="text-gray-600 mt-1">Ask natural language questions about your anonymized feedback</p>
+        <h2 className="text-2xl font-bold">{t('step.query')}</h2>
+        <p className="text-gray-600 mt-1">{t('step.query.lead')}</p>
       </div>
 
       {/* Search Form */}
@@ -103,11 +106,11 @@ export default function QueryTab() {
           
           {/* Query Input */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Your Question</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">{t('query.question')}</label>
             <textarea
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g., What do students say about the teaching quality?"
+              placeholder={t('query.placeholder')}
               disabled={loading}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none disabled:opacity-50"
               rows="3"
@@ -116,19 +119,19 @@ export default function QueryTab() {
 
           {/* Filters */}
           <div className="space-y-3">
-            <p className="text-sm font-semibold text-gray-700">🔍 Filters (optional)</p>
+            <p className="text-sm font-semibold text-gray-700">{t('query.filters')}</p>
             
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
               {/* Institution */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Institution</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">{t('query.f.institution')}</label>
                 <select
                   value={institution}
                   onChange={(e) => setInstitution(e.target.value)}
                   disabled={loading || optionsLoading}
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                 >
-                  <option value="all">All</option>
+                  <option value="all">{t('common.all')}</option>
                   {filterOptions.institutions.map(inst => (
                     <option key={inst} value={inst}>{inst}</option>
                   ))}
@@ -137,14 +140,14 @@ export default function QueryTab() {
 
               {/* Academic Year */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Academic Year</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">{t('query.f.year')}</label>
                 <select
                   value={year}
                   onChange={(e) => setYear(e.target.value)}
                   disabled={loading || optionsLoading}
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                 >
-                  <option value="all">All</option>
+                  <option value="all">{t('common.all')}</option>
                   {filterOptions.academic_years.map(yr => (
                     <option key={yr} value={yr}>{yr}</option>
                   ))}
@@ -153,14 +156,14 @@ export default function QueryTab() {
 
               {/* Location */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Location</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">{t('query.f.location')}</label>
                 <select
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
                   disabled={loading || optionsLoading}
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                 >
-                  <option value="all">All</option>
+                  <option value="all">{t('common.all')}</option>
                   {filterOptions.locations.map(loc => (
                     <option key={loc} value={loc}>{loc}</option>
                   ))}
@@ -169,14 +172,14 @@ export default function QueryTab() {
 
               {/* Programme */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Programme</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">{t('query.f.programme')}</label>
                 <select
                   value={programme}
                   onChange={(e) => setProgramme(e.target.value)}
                   disabled={loading || optionsLoading}
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                 >
-                  <option value="all">All</option>
+                  <option value="all">{t('common.all')}</option>
                   {filterOptions.programmes.map(prog => (
                     <option key={prog} value={prog}>{prog}</option>
                   ))}
@@ -185,14 +188,14 @@ export default function QueryTab() {
 
               {/* Study Mode */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Study Mode</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">{t('query.f.studyMode')}</label>
                 <select
                   value={studyMode}
                   onChange={(e) => setStudyMode(e.target.value)}
                   disabled={loading || optionsLoading}
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                 >
-                  <option value="all">All</option>
+                  <option value="all">{t('common.all')}</option>
                   {filterOptions.study_modes.map(mode => (
                     <option key={mode} value={mode}>{mode}</option>
                   ))}
@@ -201,14 +204,14 @@ export default function QueryTab() {
 
               {/* Cohort */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Cohort</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">{t('query.f.cohort')}</label>
                 <select
                   value={cohort}
                   onChange={(e) => setCohort(e.target.value)}
                   disabled={loading || optionsLoading}
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                 >
-                  <option value="all">All</option>
+                  <option value="all">{t('common.all')}</option>
                   {filterOptions.cohorts.map(coh => (
                     <option key={coh} value={coh}>{coh}</option>
                   ))}
@@ -225,13 +228,13 @@ export default function QueryTab() {
           >
             {loading ? (
               <>
-                <span className="animate-spin">⏳</span>
-                Searching...
+                <Icon name="progress_activity" className="animate-spin" />
+                {t('query.searching')}
               </>
             ) : (
               <>
-                <span>🔍</span>
-                Search Database
+                <Icon name="search" />
+                {t('query.search')}
               </>
             )}
           </button>
@@ -241,7 +244,13 @@ export default function QueryTab() {
       {/* Error State */}
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-          <strong>❌ Error:</strong> {error}
+          <strong>{t(error.kind === 'empty' ? 'query.err.empty' : 'query.err.title')}</strong>
+          {error.detail && (
+            <details className="mt-2 text-sm">
+              <summary className="cursor-pointer">{t('action.details')}</summary>
+              <p className="mt-1 break-words">{error.detail}</p>
+            </details>
+          )}
         </div>
       )}
 
@@ -250,16 +259,13 @@ export default function QueryTab() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-gray-800">
-              📊 Results for "{query}"
+              {t('query.results', { n: formatNumber(results.length), q: query })}
             </h3>
-            <span className="text-sm text-gray-600">
-              {results.length} found
-            </span>
           </div>
 
           {results.length === 0 ? (
             <div className="p-6 text-center bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-gray-600">No results found. Try a different query or adjust filters.</p>
+              <p className="text-gray-600">{t('query.none')}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -273,7 +279,7 @@ export default function QueryTab() {
                     <div className="flex gap-2 text-xs flex-wrap justify-end">
                       {result.similarity !== undefined && (
                         <span className="px-2 py-1 bg-green-200 text-green-800 rounded">
-                          Match: {(result.similarity * 100).toFixed(1)}%
+                          {t('query.match', { x: Math.round(result.similarity * 100) })}
                         </span>
                       )}
                     </div>
