@@ -7,6 +7,9 @@ from src.config.settings import LLAMA_CPP_N_GPU_LAYERS
 
 DEFAULT_QUANTIZATION = "UD-Q4_K_XL"
 DEFAULT_SERVER_ARGS = ("--skip-chat-parsing",)
+# Files are made local first (model_downloads.ensure_downloaded), so the server
+# never downloads: a missing file fails fast instead of a silent re-download.
+OFFLINE_SERVER_ARGS = ("--offline",)
 
 
 @dataclass(frozen=True)
@@ -97,6 +100,14 @@ class LlamaCppModel:
         return f"{self.repo_id}:{self.quantization}"
 
     @property
+    def download_patterns(self) -> list[str]:
+        """The repo files `llama-server -hf <repo>:<quant>` loads: the main GGUF,
+        the BF16 projector and the root-level MTP draft. Narrower than
+        `mmproj*` / `*mtp*`, which would also pull the F16/F32 projectors and
+        the MTP/ variants (about 2.8 GB extra for 12B)."""
+        return [f"*{self.quantization}*.gguf", "mmproj-BF16.gguf", "mtp-*.gguf"]
+
+    @property
     def download_command(self) -> str:
         return " ".join(
             [
@@ -114,6 +125,7 @@ class LlamaCppModel:
             server_bin,
             "-hf",
             self.llama_server_model_id,
+            *OFFLINE_SERVER_ARGS,
             *self.generation.server_args,
             *DEFAULT_SERVER_ARGS,
             *self.extra_server_args,

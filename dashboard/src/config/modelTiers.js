@@ -1,15 +1,14 @@
+import TIER_IDS from './modelTiers.json'
+
 /**
- * Quick / Balanced / Most thorough (spec D8). Mirrors src/config/model_tiers.py; the
- * ids here are the offline fallback when GET /api/model-tiers cannot be loaded.
+ * Quick / Balanced / Most thorough (spec D8). TierPicker reads the live ids from
+ * GET /api/model-tiers; these are the fallback when that lookup fails. The ids live in
+ * modelTiers.json, which tests/test_model_downloads.py pins to src/config/model_tiers.py.
  */
 export const TIER_KEYS = ['quick', 'balanced', 'thorough']
 export const DEFAULT_TIER = 'balanced'
 
-export const TIERS = {
-  quick: { vectors: 'Octen/Octen-Embedding-0.6B', insights: 'unsloth/gemma-4-E2B-it-qat-GGUF:UD-Q4_K_XL' },
-  balanced: { vectors: 'Octen/Octen-Embedding-0.6B', insights: 'unsloth/gemma-4-12B-it-qat-GGUF:UD-Q4_K_XL' },
-  thorough: { vectors: 'Octen/Octen-Embedding-4B', insights: 'unsloth/gemma-4-26B-A4B-it-qat-GGUF:UD-Q4_K_XL' },
-}
+export const TIERS = TIER_IDS
 
 export const isTier = (v) => TIER_KEYS.includes(v)
 

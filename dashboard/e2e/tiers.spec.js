@@ -40,7 +40,8 @@ const INSIGHT_ROUTES = {
   '/api/cache-status': { main_baseline: 0, main_filtered: 0, subtheme_baseline: 0, subtheme_filtered: 0 },
   '/api/vector-stats': { total_documents: 120 },
   '/api/filter-options': { status: 'success', options: {} },
-  'POST /api/llm-models/start': { status: 'ready' },
+  'POST /api/llm-models/start-stream': { ndjson: [{ status: 'progress', stage: 'load' }, { status: 'success' }] },
+  'POST /api/precompute-insights': { ndjson: [{ status: 'success', progress: 100 }] },
 }
 
 const radio = (scope, name) => scope.getByRole('radio', { name })
@@ -139,7 +140,7 @@ test.describe('model tiers, step 2', () => {
 })
 
 test.describe('model tiers, step 4', () => {
-  test('Balanced by default; choosing Snel starts the quick insights model', async ({ page, mockApi }) => {
+  test('Balanced by default; choosing Snel does not start a model, the run starts the quick one', async ({ page, mockApi }) => {
     await mockApi(INSIGHT_ROUTES)
     await page.goto('/pipeline-demo?step=insights')
     const p = page.locator('#step-panel-insights')
@@ -149,7 +150,14 @@ test.describe('model tiers, step 4', () => {
 
     await radio(p, /Snel/).check()
     await expect(radio(p, /Snel/)).toBeChecked()
-    await expect.poll(() => mockApi.requestsTo('/api/llm-models/start', 'POST').length).toBe(1)
-    expect(mockApi.requestsTo('/api/llm-models/start', 'POST')[0].body.llm_model).toBe(E2B)
+    await radio(p, /Meest grondig/).check()
+    await radio(p, /Snel/).check()
+    // Choosing a tier starts nothing (no 2.5-minute model start on a radio click).
+    expect(mockApi.requests.filter((r) => r.path.startsWith('/api/llm-models/start'))).toHaveLength(0)
+
+    await p.getByRole('button', { name: /Thema's samenvatten/ }).click()
+    await expect.poll(() => mockApi.requestsTo('/api/precompute-insights', 'POST').length).toBe(1)
+    expect(mockApi.requestsTo('/api/llm-models/start-stream', 'POST').map((r) => r.body.model_id)).toEqual([E2B])
+    expect(mockApi.requestsTo('/api/precompute-insights', 'POST')[0].body.llm_model).toBe(E2B)
   })
 })

@@ -10,6 +10,7 @@ from typing import Protocol
 import requests
 
 from src.config.paths import ROOT_DIR
+from src.pipeline import model_downloads
 from src.config.settings import (
     DEFAULT_LLM_PROVIDER,
     LLAMA_CPP_API_KEY,
@@ -22,6 +23,16 @@ from .llama_cpp_models import resolve_llama_cpp_model
 
 class LocalModelConnectionError(RuntimeError):
     pass
+
+
+def llama_server_env() -> dict[str, str]:
+    """The launch env: the same HF cache that snapshot_download writes to.
+
+    llama-server reads both HF_HUB_CACHE and LLAMA_CACHE (Task 12 spike), so
+    both point at one directory; never set it for only one of the two.
+    """
+    cache = model_downloads.hub_cache_dir()
+    return {**os.environ, "HF_HUB_CACHE": cache, "LLAMA_CACHE": cache}
 
 
 class LLMClient(Protocol):
@@ -120,6 +131,14 @@ class LlamaCppClient:
             return
 
         self._check_llama_server_binary(model_name)
+        # The server runs with --offline: make the files local first. The startup
+        # timeout below therefore only covers loading, never a download.
+        model = resolve_llama_cpp_model(model_name)
+        model_downloads.ensure_downloaded(
+            model.repo_id,
+            allow_patterns=model.download_patterns,
+            on_progress=lambda _done, _total: None,
+        )
         self._managed_log_path.parent.mkdir(parents=True, exist_ok=True)
         command = self._server_command(model_name)
         with self._managed_log_path.open("ab") as log_file:
@@ -131,6 +150,7 @@ class LlamaCppClient:
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
+                env=llama_server_env(),
             )
         self.__class__._managed_process = process
         self._managed_pid_path.write_text(str(process.pid), encoding="ascii")

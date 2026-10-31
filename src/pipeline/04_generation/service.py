@@ -1,7 +1,9 @@
 from importlib import import_module
 import json
 
+from src.config.model_tiers import tier_for_model
 from src.config.themes import LOW_INFORMATION_THEME
+from src.pipeline import model_downloads
 from src.pipeline.events import stream_event
 from src.config.settings import (
     DEFAULT_LLM_MODEL,
@@ -1145,3 +1147,28 @@ def themes_overview_payload(filters: dict) -> dict:
         "total_filtered_documents": total_filtered_documents,
         "themes": themes,
     }
+
+
+def start_llm_stream(model_name: str, provider: str = DEFAULT_LLM_PROVIDER):
+    """NDJSON for starting the local LLM: download events, then `load`, then success.
+
+    One attempt, no retries. If the server can't start within
+    LLAMA_CPP_STARTUP_TIMEOUT (counted only once the files are local), or is
+    missing or exits early, the stream ends with `error.llm_unavailable`.
+    """
+    model = llama_cpp_models.resolve_llama_cpp_model(model_name)
+    tier = tier_for_model("insights", model.id)
+    downloaded = yield from model_downloads.download_events(
+        model.repo_id, tier, allow_patterns=model.download_patterns
+    )
+    if not downloaded:
+        return
+    yield stream_event("progress", stage="load", params={"tier": tier, "model": model.id},
+                       message=f"Starting {provider} with '{model.id}'...")
+    try:
+        get_llm_client(provider).ensure_model_available(model.id, allow_download=True)
+    except Exception as exc:
+        print(f"[LLAMA_CPP START ERROR] {exc}")
+        yield stream_event("error", code="error.llm_unavailable", params={"tier": tier, "model": model.id}, error=str(exc))
+        return
+    yield stream_event("success", params={"tier": tier, "model": model.id}, message=f"{model.id} is ready")

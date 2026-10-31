@@ -73,33 +73,37 @@ def _parse_gb(label: str) -> int | None:
     return round(float(match.group(1)) * 1e9) if match else None
 
 
-def _hub_size(repo_id: str) -> int | None:
-    """Sum of file sizes from the Hub; memoised, None offline or on any error."""
+def _hub_size(repo_id: str, allow_patterns: tuple[str, ...] | None) -> int | None:
+    """Sum of the sizes of the files a download would fetch; memoised, None offline or on any error."""
     if _offline():
         return None
+    key = f"{repo_id}|{','.join(allow_patterns or ())}"
     now = time.monotonic()
     with _size_lock:
-        hit = _size_cache.get(repo_id)
+        hit = _size_cache.get(key)
     if hit and (hit[0] is not None or now - hit[1] < FAILURE_RETRY_SECONDS):
         return hit[0]
     try:
-        from huggingface_hub import HfApi
+        from src.pipeline.model_downloads import hub_file_sizes
 
-        info = HfApi().model_info(repo_id, files_metadata=True, timeout=HUB_TIMEOUT_SECONDS)
-        sizes = [s.size for s in (info.siblings or []) if isinstance(getattr(s, "size", None), int)]
-        size = sum(sizes) or None
+        sizes = hub_file_sizes(repo_id, allow_patterns, timeout=HUB_TIMEOUT_SECONDS)
+        size = sum(s for s in sizes.values() if isinstance(s, int)) or None
     except Exception:
         size = None
     with _size_lock:
-        _size_cache[repo_id] = (size, now)
+        _size_cache[key] = (size, now)
     return size
 
 
 def _size_bytes(step: str, model_id: str) -> int | None:
+    """Bytes the tier would download: only the files ensure_downloaded fetches."""
     try:
         if step == "insights":
-            return _parse_gb(_llama().resolve_llama_cpp_model(model_id).size)
-        return _hub_size(model_id)
+            model = _llama().resolve_llama_cpp_model(model_id)
+            return _hub_size(model.repo_id, tuple(model.download_patterns)) or _parse_gb(model.size)
+        from src.pipeline.model_downloads import EMBEDDING_ALLOW_PATTERNS
+
+        return _hub_size(model_id, tuple(EMBEDDING_ALLOW_PATTERNS))
     except Exception:
         return None
 

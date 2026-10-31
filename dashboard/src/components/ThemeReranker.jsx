@@ -9,6 +9,7 @@ import DoneCard from './pipeline/DoneCard';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 import { DONE_CARD_STATES } from '../utils/doneMessage';
+import { downloadFromEvent, streamErrorKey } from '../utils/downloadProgress';
 
 const DEFAULT_RERANKER = 'zeroentropy/zerank-2-reranker';
 
@@ -33,6 +34,7 @@ export default function ThemeReranker({ onNavigate }) {
   const [progress, setProgress] = useState(0);
   const [currentStage, setCurrentStage] = useState('');
   const [logs, setLogs] = useState([]);
+  const [download, setDownload] = useState(null);
   const [result, setResult] = useState(null);
 
   useEffect(() => {
@@ -71,6 +73,7 @@ export default function ThemeReranker({ onNavigate }) {
     setProgress(0);
     setCurrentStage('');
     setLogs([]);
+    setDownload(null);
     setResult(null);
 
     let sawEvent = false;
@@ -91,15 +94,18 @@ export default function ThemeReranker({ onNavigate }) {
             refresh();
           }
           if (data.status === 'progress') {
+            setDownload(downloadFromEvent(data));
             if (data.progress !== undefined) setProgress(data.progress);
             if (data.stage) setCurrentStage(data.stage);
             if (data.message) setLogs(prev => [...prev, data.message]);
           } else if (data.status === 'success') {
+            setDownload(null);
             setProgress(100);
             setCurrentStage('save');
             succeeded = true;
           } else if (data.status === 'error') {
-            setResult({ error: data.error });
+            setDownload(null);
+            setResult({ error: data.error, code: data.code });
           }
         }
       });
@@ -151,7 +157,7 @@ export default function ThemeReranker({ onNavigate }) {
 
       {result?.error && !loading && !showDone && (
         <div role="alert" className="p-5 rounded-2xl bg-error-container text-on-error-container">
-          <p className="m-0 font-bold">{t('rerank.failed')}</p>
+          <p className="m-0 font-bold">{t(streamErrorKey(result.code) ?? 'rerank.failed')}</p>
           <details className="mt-1 text-sm">
             <summary className="cursor-pointer">{t('action.details')}</summary>
             <p className="mt-1 break-words">{result.error}</p>
@@ -257,7 +263,7 @@ export default function ThemeReranker({ onNavigate }) {
         </div>
       )}
 
-      {loading && <ProgressPanel stage={currentStage} progress={progress} logs={logs} />}
+      {loading && <ProgressPanel stage={currentStage} progress={progress} logs={logs} download={download ?? undefined} />}
 
     </div>
   );

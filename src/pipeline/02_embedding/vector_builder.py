@@ -6,6 +6,8 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import json
 
 from src.pipeline.events import stream_event
+from src.pipeline import model_downloads
+from src.config.model_tiers import tier_for_model
 from importlib import import_module
 
 from src.config.settings import EMBEDDING_BATCH_SIZE, RERANKER_BATCH_SIZE
@@ -474,6 +476,13 @@ def apply_theme_reranker_stream(
             yield stream_event("success", message="No ambiguous responses needed reranking.", progress=100, reranked_documents=0)
             return
 
+        if allow_model_download:
+            # Visible download first (spec D9); the reranker is not part of a tier.
+            downloaded = yield from model_downloads.download_events(
+                selected_reranker, None, allow_patterns=model_downloads.EMBEDDING_ALLOW_PATTERNS
+            )
+            if not downloaded:
+                return
         yield stream_event("progress", stage="load", message=f"Loading reranker {selected_reranker}...", progress=10)
         reranker_model = reranker_models.load_reranker_model(
             selected_reranker,
@@ -756,7 +765,15 @@ def build_vector_db_stream(
         if is_resuming:
             yield stream_event("progress", stage="read", message=f"Resuming from checkpoint — {resume_from}/{total_docs} documents already indexed...", progress=15)
 
-        # Load/validate the model before touching ChromaDB.
+        # Load/validate the model before touching ChromaDB; download it visibly first (spec D9).
+        if allow_model_download:
+            downloaded = yield from model_downloads.download_events(
+                EMBEDDING_MODEL,
+                tier_for_model("vectors", EMBEDDING_MODEL),
+                allow_patterns=model_downloads.EMBEDDING_ALLOW_PATTERNS,
+            )
+            if not downloaded:
+                return
         yield stream_event("progress", stage="load", message=f"Loading {EMBEDDING_MODEL} embedding model via {describe_embedding_runtime(EMBEDDING_MODEL)}...", progress=25)
         try:
             model = load_embedding_model(EMBEDDING_MODEL, allow_download=allow_model_download)

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { DEFAULT_TIER, modelFor } from '../config/modelTiers.js';
 import TierPicker from './pipeline/TierPicker';
 import { shortTier } from '../utils/doneMessage';
@@ -14,6 +14,7 @@ import DoneCard from './pipeline/DoneCard';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 import { DONE_CARD_STATES } from '../utils/doneMessage';
+import { downloadFromEvent, streamErrorKey } from '../utils/downloadProgress';
 
 const PILL = {
   done: 'bg-success-container text-success',
@@ -85,14 +86,12 @@ export default function InsightGenerator({ onNavigate }) {
   const view = deriveStepView(status, 'insights');
   const vectorsAt = status?.steps?.vectors?.completed_at;
   const insights = status?.steps?.insights;
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState([]);
   const [currentStage, setCurrentStage] = useState('');
+  const [download, setDownload] = useState(null);
+  // Why the last run stopped: {key (translated headline), detail (raw backend text)}.
+  const [runError, setRunError] = useState(null);
   const [generating, setGenerating] = useState(false);
   // True while the user sets up a new run (or reads why it stopped) instead of the Done card.
   const [rerunning, setRerunning] = useState(false);
@@ -125,12 +124,6 @@ export default function InsightGenerator({ onNavigate }) {
   // Empirical: measured 50–101s per call on RTX 4050 Laptop GPU, avg ~75s; using 90s to be conservative.
   const SECONDS_PER_INSIGHT = 90;
   const THEME_COUNT = 7;
-  const [modelActivation, setModelActivation] = useState({
-    status: 'idle',
-    modelId: null,
-    message: ''
-  });
-
   const [cacheStatus, setCacheStatus] = useState({
     main_baseline: 0,
     main_filtered: 0,
@@ -147,8 +140,6 @@ export default function InsightGenerator({ onNavigate }) {
   };
 
   useEffect(() => { refreshCacheStatus(); }, []);
-
-  const activationRequestRef = useRef(0);
 
   useEffect(() => {
     fetch(apiUrl('/api/vector-stats'))
@@ -203,52 +194,36 @@ export default function InsightGenerator({ onNavigate }) {
   const extraThemeInsights = displayCombos * THEME_COUNT;
   const estimatedMinutes = Math.round((extraThemeInsights * SECONDS_PER_INSIGHT) / 60);
 
-  const selectAndStartModel = async (model) => {
-    const requestId = activationRequestRef.current + 1;
-    activationRequestRef.current = requestId;
-
-    if (!allowModelDownload) {
-      setModelActivation({
-        status: 'idle',
-        modelId: model.id,
-        message: t('ins.model.selected')
-      });
-      return;
-    }
-
-    setModelActivation({
-      status: 'starting',
-      modelId: model.id,
-      message: t('ins.model.starting')
-    });
-
+  /**
+   * Start the model for this run: download events, then load, then ready. One attempt,
+   * no retries: a server that is down or a missing model ends in one clear error.
+   */
+  const startModel = async () => {
+    const downloadTier = advancedModel ? null : tier;
+    let ready = false;
     try {
-      const res = await fetch(apiUrl('/api/llm-models/start'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          llm_model: model.id,
-          provider: LLM_PROVIDER
-        })
-      });
-      const data = await res.json();
-      if (!res.ok || data.status !== 'ready') {
-        throw new Error(data.error || `Request failed with HTTP ${res.status}`);
-      }
-      if (activationRequestRef.current !== requestId) return;
-      setModelActivation({
-        status: 'ready',
-        modelId: model.id,
-        message: t('ins.model.ready')
+      await stream.start('/api/llm-models/start-stream', { model_id: selectedModel, provider: LLM_PROVIDER }, {
+        onEvent: (data) => {
+          if (data.status === 'progress') {
+            setDownload(downloadFromEvent(data, downloadTier));
+            if (data.stage) setCurrentStage(data.stage);
+            if (data.message) setLogs(prev => [...prev, { kind: 'info', text: data.message }]);
+          } else if (data.status === 'success') {
+            ready = true;
+            setDownload(null);
+          } else if (data.status === 'error') {
+            setDownload(null);
+            setRunError({ key: streamErrorKey(data.code) ?? 'error.llm_unavailable', detail: data.error || data.message || '' });
+            setLogs(prev => [...prev, { kind: 'error', text: t('ins.log.error', { reason: data.error || data.message || '' }) }]);
+          }
+        }
       });
     } catch (e) {
-      if (activationRequestRef.current !== requestId) return;
-      setModelActivation({
-        status: 'error',
-        modelId: model.id,
-        message: t('ins.model.error')
-      });
+      if (e?.name === 'AbortError') return false;
+      setDownload(null);
+      setRunError({ key: 'error.llm_unavailable', detail: e.message });
     }
+    return ready;
   };
 
   const launchPrecompute = async ({ endpoint, useFilterGrid, label }) => {
@@ -256,12 +231,16 @@ export default function InsightGenerator({ onNavigate }) {
     setRerunning(true);
     setLastRun(null);
     setStatusNotice(false);
+    setRunError(null);
+    setDownload(null);
     setCurrentStage('');
     setLogs([{ kind: 'info', text: t('ins.log.start', { label: t(label), model: modelName }) }]);
     setProgress(0);
 
-    const MAX_RETRIES = 30;
-    const RETRY_DELAY_MS = 5000;
+    if (allowModelDownload && !(await startModel())) {
+      setGenerating(false);
+      return;
+    }
 
     if (clearCache) {
       const clearEndpoint = endpoint === '/api/precompute-subthemes'
@@ -286,63 +265,50 @@ export default function InsightGenerator({ onNavigate }) {
       filter_dimensions: useFilterGrid ? filterDimensions : [],
     };
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      let completed = false;
-      let succeeded = false;
-      let sawEvent = false;
-
-      const handleStreamEvent = (data) => {
-        if (!sawEvent) {
-          sawEvent = true;
-          refresh();
-        }
-        if (data.status === 'progress') {
-          setProgress(data.progress);
-          if (data.stage) setCurrentStage(data.stage);
-          const prefix = data.theme ? `[${data.theme}] ` : '';
-          if (data.message) setLogs(prev => [...prev, { kind: 'info', text: `${prefix}${data.message}` }]);
-        } else if (data.status === 'success') {
-          completed = true;
-          succeeded = true;
-          if (data.message) setLogs(prev => [...prev, { kind: 'ok', text: data.message }]);
-        } else if (data.status === 'error') {
-          completed = true;
-          setLogs(prev => [...prev, { kind: 'error', text: t('ins.log.error', { reason: data.message || data.error || '' }) }]);
-          setGenerating(false);
-        }
-      };
-
-      try {
-        await stream.start(endpoint, body, { onEvent: handleStreamEvent });
-      } catch (e) {
-        if (e?.name === 'AbortError') {
-          setGenerating(false);
-          break;
-        }
-        setLogs(prev => [...prev, { kind: 'warn', text: t('ins.log.connection', { reason: e.message }) }]);
+    let succeeded = false;
+    let sawEvent = false;
+    const handleStreamEvent = (data) => {
+      if (!sawEvent) {
+        sawEvent = true;
+        refresh();
       }
-      // Keep the panel until the refreshed status shows the result (no blank step).
-      const refreshed = await refresh();
-      if (succeeded) {
-        setProgress(0);
-        setRerunning(false);
-        setLastRun({ endpoint, label });
-        refreshCacheStatus();
+      if (data.status === 'progress') {
+        setDownload(downloadFromEvent(data, advancedModel ? null : tier));
+        setProgress(data.progress ?? 0);
+        if (data.stage) setCurrentStage(data.stage);
+        const prefix = data.theme ? `[${data.theme}] ` : '';
+        if (data.message) setLogs(prev => [...prev, { kind: 'info', text: `${prefix}${data.message}` }]);
+      } else if (data.status === 'success') {
+        succeeded = true;
+        setDownload(null);
+        if (data.message) setLogs(prev => [...prev, { kind: 'ok', text: data.message }]);
+      } else if (data.status === 'error') {
+        setDownload(null);
+        setRunError({ key: streamErrorKey(data.code) ?? 'state.error', detail: data.message || data.error || '' });
+        setLogs(prev => [...prev, { kind: 'error', text: t('ins.log.error', { reason: data.message || data.error || '' }) }]);
+      }
+    };
+
+    try {
+      await stream.start(endpoint, body, { onEvent: handleStreamEvent });
+    } catch (e) {
+      if (e?.name === 'AbortError') {
         setGenerating(false);
-        if (!refreshed?.status) setStatusNotice(true);
+        return;
       }
-
-      if (completed || !mountedRef.current) break;
-
-      if (attempt < MAX_RETRIES) {
-        setLogs(prev => [...prev, { kind: 'warn', text: `${t('ins.retrying')} (${attempt + 1}/${MAX_RETRIES})` }]);
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-        if (!mountedRef.current) break;
-      } else {
-        setLogs(prev => [...prev, { kind: 'error', text: t('ins.maxRetries') }]);
-        setGenerating(false);
-      }
+      setRunError({ key: 'state.error', detail: e.message });
+      setLogs(prev => [...prev, { kind: 'warn', text: t('ins.log.connection', { reason: e.message }) }]);
     }
+    // Keep the panel until the refreshed status shows the result (no blank step).
+    const refreshed = await refresh();
+    if (succeeded) {
+      setProgress(0);
+      setRerunning(false);
+      setLastRun({ endpoint, label });
+      refreshCacheStatus();
+      if (!refreshed?.status) setStatusNotice(true);
+    }
+    setGenerating(false);
   };
 
   const modelName = advancedModel || shortTier(t('tier.' + tier));
@@ -375,6 +341,21 @@ export default function InsightGenerator({ onNavigate }) {
         >
           <ResultsPlaceholder summary={insights?.summary} />
         </DoneCard>
+      )}
+
+      {runError && !generating && !showDone && (
+        <div role="alert" className="p-5 rounded-2xl bg-error-container text-on-error-container flex items-start gap-3">
+          <Icon name="error" className="text-2xl shrink-0" />
+          <div className="min-w-0">
+            <p className="m-0 font-bold">{t(runError.key)}</p>
+            {runError.detail && (
+              <details className="mt-1 text-sm">
+                <summary className="cursor-pointer">{t('action.details')}</summary>
+                <p className="mt-1 break-words">{runError.detail}</p>
+              </details>
+            )}
+          </div>
+        </div>
       )}
 
       {statusNotice && !showDone && (
@@ -415,25 +396,9 @@ export default function InsightGenerator({ onNavigate }) {
                 step="insights"
                 value={tier}
                 advancedModelId={advancedModel}
-                disabled={modelActivation.status === 'starting'}
-                onChange={(next, id) => { setTier(next); setAdvancedModel(null); selectAndStartModel({ id }); }}
-                onAdvancedChange={(id) => { setAdvancedModel(id); selectAndStartModel({ id: id ?? modelFor('insights', tier, null) }); }}
+                onChange={(next) => { setTier(next); setAdvancedModel(null); }}
+                onAdvancedChange={(id) => setAdvancedModel(id)}
               />
-              {modelActivation.message && (
-                <div
-                  className={`rounded-lg border px-3 py-2 text-xs ${
-                    modelActivation.status === 'ready'
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : modelActivation.status === 'error'
-                        ? 'border-red-200 bg-red-50 text-red-700'
-                        : modelActivation.status === 'starting'
-                          ? 'border-blue-200 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 bg-gray-50 text-gray-600'
-                  }`}
-                >
-                  {modelActivation.message}
-                </div>
-              )}
             </div>
 
             {/* Options Panel */}
@@ -639,7 +604,7 @@ export default function InsightGenerator({ onNavigate }) {
       {/* --- GENERATING PROGRESS (also stays visible on error so logs don't vanish) --- */}
       {(generating || (progress > 0 && progress < 100)) && (
         <div className="space-y-3">
-          <ProgressPanel stage={currentStage} progress={progress} logs={logs.map((log) => log.text)} />
+          <ProgressPanel stage={currentStage} progress={progress} logs={logs.map((log) => log.text)} download={download ?? undefined} />
           {/* Back button shown only when stopped mid-way (error state) */}
           {!generating && (
             <div className="flex items-center justify-between gap-3 flex-wrap p-4 bg-error-container text-error rounded-xl">

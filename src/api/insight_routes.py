@@ -235,6 +235,21 @@ def start_llm_model():
         return jsonify({"status": "error", "error": str(exc)}), 500
 
 
+@insight_bp.route("/api/llm-models/start-stream", methods=["POST"])
+def start_llm_model_stream():
+    """NDJSON: download events, then `stage:"load"`, then success or one clear error."""
+    data = request.get_json(silent=True) or {}
+    model_name = data.get("model_id") or data.get("llm_model") or settings.DEFAULT_LLM_MODEL
+    try:
+        llama_cpp_models.resolve_llama_cpp_model(model_name)
+    except ValueError as exc:
+        return jsonify({"status": "error", "code": "error.model_missing", "error": str(exc)}), 400
+    return Response(
+        generation.start_llm_stream(model_name, data.get("provider", settings.DEFAULT_LLM_PROVIDER)),
+        mimetype="application/x-ndjson",
+    )
+
+
 @insight_bp.route("/api/themes-overview", methods=["GET"])
 def get_themes_overview():
     filters = {}

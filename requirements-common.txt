@@ -4,10 +4,11 @@ python-dotenv
 requests
 pandas
 chromadb
-sentence-transformers
+sentence-transformers<6  # 6.x breaks Octen models (Normalize kwarg)
 presidio-analyzer
 presidio-anonymizer
 transformers
+huggingface_hub>=1.33,<2  # snapshot_download(tqdm_class) "Downloading bytes" bar; see tests/test_model_downloads.py
 langdetect
 spacy
 

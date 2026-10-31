@@ -52,6 +52,13 @@ describe('ProgressPanel', () => {
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })
 
+  it('names no tier for a model outside the tiers (reranker, Advanced id)', () => {
+    const { rerender } = wrap(<ProgressPanel stage="load" progress={10} logs={[]} download={{ bytesDone: 0.4e9, bytesTotal: 1.2e9, tierKey: null }} />)
+    expect(screen.getByText('Het model wordt gedownload: 0,4 GB van 1,2 GB')).toBeInTheDocument()
+    rerender(<I18nProvider><ProgressPanel stage="load" progress={10} logs={[]} download={{ bytesDone: 5e8, bytesTotal: null, tierKey: null }} /></I18nProvider>)
+    expect(screen.getByText('Het model wordt gedownload… Dit gebeurt maar één keer.')).toBeInTheDocument()
+  })
+
   it('shows an ETA only when one is supplied', () => {
     const { rerender } = wrap(<ProgressPanel stage="process" progress={40} logs={[]} />)
     expect(screen.queryByText(/nog ongeveer/)).not.toBeInTheDocument()

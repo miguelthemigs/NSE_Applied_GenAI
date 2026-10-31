@@ -1,0 +1,14 @@
+{
+  "quick": {
+    "vectors": "Octen/Octen-Embedding-0.6B",
+    "insights": "unsloth/gemma-4-E2B-it-qat-GGUF:UD-Q4_K_XL"
+  },
+  "balanced": {
+    "vectors": "Octen/Octen-Embedding-0.6B",
+    "insights": "unsloth/gemma-4-12B-it-qat-GGUF:UD-Q4_K_XL"
+  },
+  "thorough": {
+    "vectors": "Octen/Octen-Embedding-4B",
+    "insights": "unsloth/gemma-4-26B-A4B-it-qat-GGUF:UD-Q4_K_XL"
+  }
+}

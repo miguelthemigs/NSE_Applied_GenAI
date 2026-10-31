@@ -213,6 +213,7 @@ test.describe('done cards and the review gate', () => {
       '/api/cache-status': { main_baseline: 3, main_filtered: 0, subtheme_baseline: 0, subtheme_filtered: 0 },
       '/api/vector-stats': { total_documents: 120 },
       '/api/filter-options': { status: 'success', options: {} },
+      'POST /api/llm-models/start-stream': { ndjson: [{ status: 'progress', stage: 'load' }, { status: 'success' }] },
       'POST /api/precompute-insights': { ndjson: [{ status: 'progress', progress: 50, stage: 'process' }, { status: 'success' }] },
     })
     await page.goto('/pipeline-demo?step=insights')

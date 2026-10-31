@@ -110,3 +110,52 @@ def _parse_event(line) -> dict | None:
     except (TypeError, ValueError):
         return None
     return event if isinstance(event, dict) else None
+
+
+class ProgressSnapshot:
+    """A small dict that worker threads change and a reader copies, under one lock.
+
+    `mutate(fn)` runs `fn(state)` under the lock, bumps the version and returns
+    fn's result; `read()` returns `(version, copy)`, so a publisher can tell
+    whether anything changed since it last looked.
+    """
+
+    def __init__(self, initial: dict | None = None):
+        self._lock = threading.Lock()
+        self._state = dict(initial or {})
+        self._version = 0
+
+    def mutate(self, fn: Callable[[dict], object]):
+        with self._lock:
+            result = fn(self._state)
+            self._version += 1
+            return result
+
+    def read(self) -> tuple[int, dict]:
+        with self._lock:
+            return self._version, dict(self._state)
+
+
+class BackgroundCall:
+    """Runs `fn(*args, **kwargs)` on a daemon thread; keeps its result or error.
+
+    A client that disconnects mid-stream does not stop the call: a model
+    download simply finishes in the background.
+    """
+
+    def __init__(self, fn: Callable, *args, **kwargs):
+        self.result = None
+        self.error: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, args=(fn, args, kwargs), daemon=True)
+        self._thread.start()
+
+    def _run(self, fn, args, kwargs) -> None:
+        try:
+            self.result = fn(*args, **kwargs)
+        except BaseException as exc:  # reported to the stream, never raised in the thread
+            self.error = exc
+
+    def wait(self, timeout: float | None = None) -> bool:
+        """Wait up to `timeout` seconds; True once the call has finished."""
+        self._thread.join(timeout)
+        return not self._thread.is_alive()

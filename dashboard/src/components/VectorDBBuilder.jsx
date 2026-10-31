@@ -13,6 +13,7 @@ import { PIPELINE_STEPS } from '../config/pipelineSteps';
 import { DEFAULT_TIER, isTier, modelFor } from '../config/modelTiers';
 import TierPicker from './pipeline/TierPicker';
 import { shortTier } from '../utils/doneMessage';
+import { downloadFromEvent, streamErrorKey } from '../utils/downloadProgress';
 
 const STEP_N = Object.fromEntries(PIPELINE_STEPS.map((s) => [s.id, s.n]));
 
@@ -33,6 +34,7 @@ export default function VectorDBBuilder({ onNavigate }) {
   const [currentStage, setCurrentStage] = useState('');
   const [logs, setLogs] = useState([]);
   const [currentDoc, setCurrentDoc] = useState('');
+  const [download, setDownload] = useState(null);
 
   // Configuration state
   const [columns, setColumns] = useState([]);
@@ -95,6 +97,8 @@ export default function VectorDBBuilder({ onNavigate }) {
     const model = overrideModel ?? selectedModel;
     const cols = overrideCols ?? selectedColumns;
     if (cols.length === 0) return;
+    // The picked tier names the download; an Advanced or resumed model uses the event's tier.
+    const downloadTier = overrideModel || advancedModel ? null : tier;
 
     setLoading(true);
     setRerunning(true);
@@ -103,6 +107,7 @@ export default function VectorDBBuilder({ onNavigate }) {
     setCurrentStage('');
     setLogs([]);
     setCurrentDoc('');
+    setDownload(null);
     setResult(null);
     setVectorCheckpoint(null);
 
@@ -122,16 +127,20 @@ export default function VectorDBBuilder({ onNavigate }) {
             refresh();
           }
           if (data.status === 'progress') {
+            setDownload(downloadFromEvent(data, downloadTier));
             if (data.progress !== undefined) setProgress(data.progress);
             if (data.stage) setCurrentStage(data.stage);
             if (data.message) setLogs(prev => [...prev, data.message]);
             if (data.current_doc) setCurrentDoc(data.current_doc);
           } else if (data.status === 'success') {
+            setDownload(null);
             setProgress(100);
             setCurrentStage('save');
             succeeded = true;
           } else if (data.status === 'error') {
-            setResult({ error: data.error });
+            setDownload(null);
+            const key = streamErrorKey(data.code);
+            setResult({ error: data.error, ...(key ? { message: t(key) } : {}) });
             if (data.error) setLogs(prev => [...prev, data.error]);
           }
         }
@@ -337,7 +346,7 @@ export default function VectorDBBuilder({ onNavigate }) {
 
       {/* --- BUILDING PROGRESS --- */}
       {loading && (
-        <ProgressPanel stage={currentStage} progress={progress} logs={currentDoc ? [...logs, currentDoc] : logs} />
+        <ProgressPanel stage={currentStage} progress={progress} logs={currentDoc ? [...logs, currentDoc] : logs} download={download ?? undefined} />
       )}
 
     </div>

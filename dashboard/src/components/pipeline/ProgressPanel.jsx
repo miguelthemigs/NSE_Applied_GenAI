@@ -10,7 +10,8 @@ const shortTier = (label) => label.replace(/\s*\(.*\)\s*$/, '')
 
 /**
  * Light progress card shared by all four steps. Render it only while a run is active.
- * `download` is {bytesDone, bytesTotal, tierKey, etaSeconds?}; bytesTotal null means unknown size.
+ * `download` is {bytesDone, bytesTotal, tierKey, etaSeconds?}; bytesTotal null means unknown size,
+ * tierKey null means a model outside the tiers (the reranker, an Advanced id).
  */
 export default function ProgressPanel({ stage, progress = 0, etaSeconds, logs = [], download }) {
   const { t, formatBytes } = useI18n()
@@ -23,18 +24,17 @@ export default function ProgressPanel({ stage, progress = 0, etaSeconds, logs = 
 
   let downloadText = null
   if (download) {
-    const tier = shortTier(t('tier.' + download.tierKey))
+    // A tier names the model ("Het Snel-model"); a reranker or Advanced model has none.
+    const prefix = download.tierKey ? 'download.' : 'download.other.'
+    const tier = download.tierKey ? shortTier(t('tier.' + download.tierKey)) : undefined
     if (download.bytesTotal > 0) {
-      const text = t('download.running', {
-        tier,
-        done: formatBytes(download.bytesDone),
-        total: formatBytes(download.bytesTotal),
-        min: downloadEta ? minutes(downloadEta) : '',
-      })
-      // Without an honest estimate, drop the trailing "· about N min left" clause.
-      downloadText = downloadEta ? text : text.split(' · ')[0]
+      const vars = { tier, done: formatBytes(download.bytesDone), total: formatBytes(download.bytesTotal) }
+      // Without an honest estimate there is no "about N min left" clause.
+      downloadText = downloadEta
+        ? t(prefix + 'running', { ...vars, min: minutes(downloadEta) })
+        : t(prefix + 'running.noEta', vars)
     } else {
-      downloadText = t('download.unknown', { tier })
+      downloadText = t(prefix + 'unknown', { tier })
     }
   }
 
