@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime, timezone
 from importlib import import_module
 import io
 import json
@@ -90,7 +91,13 @@ class PipelineStatusTests(unittest.TestCase):
 
     # -- fixtures ---------------------------------------------------------
 
-    def _write_anonymize(self, *, review: int = 0, verified: bool = True) -> None:
+    def _write_anonymize(
+        self,
+        *,
+        review: int = 0,
+        verified: bool = True,
+        timestamp: str = "2026-10-31 10:00:00",
+    ) -> None:
         self.csv.write_text("id,text\n1,[NAME] zei hallo\n", encoding="utf-8")
         missed = {"NAME": review, "PII": 0, "LOCATION": 0, "TITLE": 0, "HEALTH": 0}
         self.report.write_text(
@@ -108,6 +115,7 @@ class PipelineStatusTests(unittest.TestCase):
                     "missed_counts": missed,
                     "missed_samples": {"NAME": ["Jan"] if review else []},
                     "verification_skipped": not verified,
+                    "timestamp": timestamp,
                 }
             ),
             encoding="utf-8",
@@ -123,6 +131,13 @@ class PipelineStatusTests(unittest.TestCase):
 
     def _status(self) -> dict:
         return status.build_pipeline_status()
+
+    def _acknowledge(self, report_id: str | None = None):
+        if report_id is None:
+            report_id = self._status()["steps"]["anonymize"]["summary"]["report_id"]
+        return self.client.post(
+            "/api/pipeline/acknowledge-review", json={"report_id": report_id}
+        )
 
     def _states(self) -> dict:
         return {name: step["state"] for name, step in self._status()["steps"].items()}
@@ -150,7 +165,8 @@ class PipelineStatusTests(unittest.TestCase):
         self.assertFalse(anonymize["summary"]["acknowledged"])
         self.assertEqual(payload["steps"]["vectors"]["state"], "blocked")
 
-        res = self.client.post("/api/pipeline/acknowledge-review")
+        self.assertEqual(anonymize["summary"]["report_id"], "2026-10-31 10:00:00")
+        res = self._acknowledge()
         self.assertEqual(res.status_code, 200)
         body = res.get_json()
         self.assertEqual(body["steps"]["anonymize"]["state"], "done")
@@ -175,7 +191,7 @@ class PipelineStatusTests(unittest.TestCase):
 
     def test_anon_unverified_stays_unverified_after_acknowledge(self):
         self._write_anonymize(review=0, verified=False)
-        self.client.post("/api/pipeline/acknowledge-review")
+        self.assertEqual(self._acknowledge().status_code, 200)
         self.assertEqual(self._states()["anonymize"], "unverified")
 
     def test_anon_interrupted(self):
@@ -369,11 +385,124 @@ class PipelineStatusTests(unittest.TestCase):
             payload["steps"]["anonymize"]["completed_at"], "2026-10-01T10:00:00.000000Z"
         )
 
+    # -- D7: acknowledgement is bound to one report ---------------------------
+
+    def test_stale_report_id_is_rejected_and_state_unchanged(self):
+        self._write_anonymize(review=1)
+        before = self.state_file.read_bytes() if self.state_file.exists() else None
+        res = self._acknowledge("2026-01-01 00:00:00")
+        self.assertEqual(res.status_code, 409)
+        body = res.get_json()
+        self.assertEqual(body["status"], "error")
+        self.assertEqual(body["code"], "error.stale_review")
+        self.assertEqual(body["steps"]["anonymize"]["state"], "needs_review")
+        after = self.state_file.read_bytes() if self.state_file.exists() else None
+        self.assertEqual(before, after)
+        self.assertEqual(self._states()["anonymize"], "needs_review")
+
+    def test_missing_report_id_is_rejected(self):
+        self._write_anonymize(review=1)
+        res = self.client.post("/api/pipeline/acknowledge-review", json={})
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.get_json()["code"], "error.stale_review")
+        self.assertEqual(self._states()["anonymize"], "needs_review")
+
+    def test_acknowledgement_of_old_report_does_not_cover_new_report(self):
+        self._write_anonymize(review=1, timestamp="2026-10-31 10:00:00")
+        self.assertEqual(self._acknowledge().status_code, 200)
+        self.assertEqual(self._states()["anonymize"], "done")
+        # A new report appears without any state write (e.g. hooks failed).
+        self._write_anonymize(review=5, timestamp="2026-10-31 11:00:00")
+        summary = self._status()["steps"]["anonymize"]["summary"]
+        self.assertEqual(self._states()["anonymize"], "needs_review")
+        self.assertFalse(summary["acknowledged"])
+
+    def test_report_without_timestamp_uses_mtime_identity(self):
+        self._write_anonymize(review=1)
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        del report["timestamp"]
+        self.report.write_text(json.dumps(report), encoding="utf-8")
+        report_id = self._status()["steps"]["anonymize"]["summary"]["report_id"]
+        self.assertEqual(report_id, f"mtime_ns:{self.report.stat().st_mtime_ns}")
+        self.assertEqual(self._acknowledge(report_id).status_code, 200)
+        self.assertEqual(self._states()["anonymize"], "done")
+
+    def test_anonymize_rerun_with_failing_state_writes_still_needs_review(self):
+        anonymization = import_module("src.pipeline.01_anonymization.service")
+        self._write_anonymize(review=1, timestamp="2026-10-31 10:00:00")
+        self.assertEqual(self._acknowledge().status_code, 200)
+        upload = self.dir / "upload.csv"
+        upload.write_text("id\n1\n", encoding="utf-8")
+
+        def fake_process(*_args, **_kwargs):
+            self._write_anonymize(review=5, timestamp="2026-10-31 11:00:00")
+            yield stream_event("success", progress=100)
+
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            mock.patch.object(anonymization, "get_upload_path", return_value=str(upload)),
+            mock.patch.object(anonymization, "SEP_FILE", self.dir / "sep.txt"),
+            mock.patch.object(
+                anonymization._engine, "process_file_with_layers", side_effect=fake_process
+            ),
+            mock.patch.object(state, "_write_state", side_effect=OSError("disk full")),
+        ):
+            list(anonymization.anonymize_uploaded_file(["id"], ["presidio"]))
+        anonymize = self._status()["steps"]["anonymize"]
+        self.assertEqual(anonymize["state"], "needs_review")
+        self.assertEqual(anonymize["summary"]["review"], 5)
+        self.assertFalse(anonymize["summary"]["acknowledged"])
+
+    def test_recheck_resets_acknowledgement_on_start_and_success(self):
+        anonymization = import_module("src.pipeline.01_anonymization.service")
+        self._write_anonymize(review=1)
+        self.assertEqual(self._acknowledge().status_code, 200)
+        upload = self.dir / "upload.csv"
+        upload.write_text("id\n1\n", encoding="utf-8")
+        during = []
+
+        def fake_check(*_args, **_kwargs):
+            # The report is left untouched, so only the reset can flip the state.
+            during.append(state.load_state()["anonymize"]["acknowledged"])
+            yield stream_event("success", progress=100)
+
+        with (
+            mock.patch.object(anonymization, "get_upload_path", return_value=str(upload)),
+            mock.patch.object(anonymization, "ANONYMIZED_CSV_PATH", self.csv),
+            mock.patch.object(anonymization._engine, "REPORT_JSON", self.report),
+            mock.patch.object(
+                anonymization._engine, "run_check_stream", side_effect=fake_check
+            ),
+        ):
+            list(anonymization.run_anonymize_check_stream())
+        self.assertEqual(during, [False])
+        entry = state.load_state()["anonymize"]
+        self.assertFalse(entry["acknowledged"])
+        self.assertIsNone(entry["acknowledged_report"])
+        self.assertEqual(self._states()["anonymize"], "needs_review")
+
+    # -- robustness -------------------------------------------------------
+
+    def test_malformed_report_errors_only_that_step(self):
+        self._write_anonymize(review=1)
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        report["missed_counts"] = [1, 2]
+        self.report.write_text(json.dumps(report), encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            res = self.client.get("/api/pipeline/status")
+        self.assertEqual(res.status_code, 200)
+        steps = res.get_json()["steps"]
+        self.assertEqual(steps["anonymize"]["state"], "error")
+        self.assertIsNone(steps["anonymize"]["summary"])
+        self.assertEqual(steps["vectors"]["state"], "blocked")
+
     def test_completed_at_falls_back_to_artefact_mtime(self):
         self._write_anonymize()
         completed_at = self._status()["steps"]["anonymize"]["completed_at"]
-        self.assertIsNotNone(completed_at)
-        self.assertTrue(completed_at.endswith("Z"))
+        expected = datetime.fromtimestamp(
+            self.csv.stat().st_mtime, tz=timezone.utc
+        ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        self.assertEqual(completed_at, expected)
 
     def test_status_route_returns_contract(self):
         res = self.client.get("/api/pipeline/status")
@@ -514,6 +643,7 @@ class PipelineStateFileTests(unittest.TestCase):
         state.mark_completed("anonymize", path=self.path)
         entry = state.load_state(self.path)["anonymize"]
         self.assertFalse(entry["acknowledged"])
+        self.assertIsNone(entry["acknowledged_report"])
         self.assertTrue(entry["completed_at"].endswith("Z"))
 
     def test_mark_completed_merges_extra_and_keeps_other_steps(self):
@@ -584,6 +714,23 @@ class TrackedStreamTests(unittest.TestCase):
         stream.close()
         self.assertIsNone(jobs.active_job())
         self.assertEqual(closed, [True])
+
+    def test_overlapping_streams_do_not_clear_each_other(self):
+        def source(n):
+            for i in range(n):
+                yield stream_event("progress", stage="process", progress=i)
+
+        first = jobs.tracked_stream("vectors", source(5))
+        next(first)
+        second = jobs.tracked_stream("insights", source(5))
+        next(second)
+        self.assertEqual(jobs.active_job()["step"], "insights")
+        next(first)  # progress from the older stream must not touch the slot
+        self.assertEqual(jobs.active_job(), {"step": "insights", "stage": "process", "progress": 0})
+        first.close()
+        self.assertEqual(jobs.active_job()["step"], "insights")
+        second.close()
+        self.assertIsNone(jobs.active_job())
 
     def test_exception_in_source_finishes_job(self):
         def source():

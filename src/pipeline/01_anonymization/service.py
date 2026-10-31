@@ -65,8 +65,16 @@ def anonymize_uploaded_file(
             sep=sep,
             run_verification=run_verification,
         ),
+        on_start=_reset_acknowledgement,
         on_success=_record_anonymize_success,
     )
+
+
+def _reset_acknowledgement() -> None:
+    # The report is about to be rewritten; never carry an old review tick
+    # over, even if the success hook later fails. The tick is also bound to
+    # the report's identity (see status.py), which is the real guarantee.
+    state.reset_acknowledgement()
 
 
 def _record_anonymize_success(_event: dict) -> None:
@@ -77,7 +85,7 @@ def _record_anonymize_success(_event: dict) -> None:
 def _record_check_success(_event: dict) -> None:
     # A re-check rewrites the report but not the data, so downstream steps
     # stay current; only the acknowledgement of the old miss list is void.
-    state.set_flag("anonymize", "acknowledged", False)
+    state.reset_acknowledgement()
 
 
 def inspect_anonymized_file() -> dict:
@@ -127,6 +135,7 @@ def run_anonymize_check_stream():
     return jobs.tracked_stream(
         "anonymize",
         _engine.run_check_stream(original_path, str(ANONYMIZED_CSV_PATH), columns),
+        on_start=_reset_acknowledgement,
         on_success=_record_check_success,
     )
 

@@ -107,7 +107,28 @@ def _entry(saved: dict, step: str) -> dict:
 # -- steps -------------------------------------------------------------------
 
 
-def _anonymize_summary(report: dict, acknowledged: bool) -> dict:
+def report_identity(report: dict | None, path: Path) -> str | None:
+    """Identity of the anonymisation report a review acknowledgement refers to.
+
+    The report's own `timestamp` when it has one, else the file's mtime_ns.
+    """
+    timestamp = report.get("timestamp") if isinstance(report, dict) else None
+    if isinstance(timestamp, str) and timestamp:
+        return timestamp
+    try:
+        return f"mtime_ns:{path.stat().st_mtime_ns}"
+    except OSError:
+        return None
+
+
+def current_report_id() -> str | None:
+    report = _read_json(ANON_REPORT_JSON) if ANON_REPORT_JSON.exists() else None
+    if report is None:
+        return None  # nothing reviewable: no report, or an unreadable one
+    return report_identity(report, ANON_REPORT_JSON)
+
+
+def _anonymize_summary(report: dict, acknowledged: bool, report_id: str | None) -> dict:
     verified = not bool(report.get("verification_skipped"))
     missed = report.get("missed_counts") or {}
     review = sum(int(v or 0) for v in missed.values()) if verified else 0
@@ -124,6 +145,7 @@ def _anonymize_summary(report: dict, acknowledged: bool) -> dict:
         "verified": verified,
         "acknowledged": acknowledged,
         "by_type": by_type,
+        "report_id": report_id,
     }
 
 
@@ -132,8 +154,16 @@ def _anonymize_step(entry: dict, active_step: str | None) -> dict:
     has_artefacts = ANONYMIZED_CSV_PATH.exists() and ANON_REPORT_JSON.exists()
     if has_artefacts:
         report = _read_json(ANON_REPORT_JSON)
-    acknowledged = entry.get("acknowledged") is True
-    summary = _anonymize_summary(report, acknowledged) if report is not None else None
+    summary = None
+    if report is not None:
+        report_id = report_identity(report, ANON_REPORT_JSON)
+        # Only an acknowledgement of *this* report counts (D7).
+        acknowledged = (
+            report_id is not None
+            and entry.get("acknowledged") is True
+            and entry.get("acknowledged_report") == report_id
+        )
+        summary = _anonymize_summary(report, acknowledged, report_id)
 
     if active_step == "anonymize":
         value = "in_progress"
@@ -145,7 +175,7 @@ def _anonymize_step(entry: dict, active_step: str | None) -> dict:
         value = "error"  # unreadable report: never treat as safe
     elif not summary["verified"]:
         value = "unverified"
-    elif summary["review"] > 0 and not acknowledged:
+    elif summary["review"] > 0 and not summary["acknowledged"]:
         value = "needs_review"
     else:
         value = "done"
@@ -301,35 +331,68 @@ def _insights_step(
     return {"state": value, "completed_at": completed_at, "summary": summary}
 
 
+def _error_step(step: str, exc: Exception, **extra) -> dict:
+    print(f"[PIPELINE STATUS] Could not derive {step}: {exc!r}")
+    return {"state": "error", "completed_at": None, "summary": None, **extra}
+
+
+def _safe(step: str, build, *, fallback_extra: dict | None = None) -> dict:
+    """Derive one step; a broken artefact turns only that step into `error`."""
+    try:
+        return build()
+    except Exception as exc:
+        return _error_step(step, exc, **(fallback_extra or {}))
+
+
 def build_pipeline_status() -> dict:
     saved = state.load_state()
     job = jobs.active_job()
     active_step = job["step"] if job else None
-    ready = bool(vector_db_is_ready())
-    metadata, count = read_vector_collection()
+    try:
+        ready = bool(vector_db_is_ready())
+    except Exception as exc:
+        print(f"[PIPELINE STATUS] Vector DB readiness check failed: {exc!r}")
+        ready = False
+    try:
+        metadata, count = read_vector_collection()
+    except Exception as exc:
+        print(f"[PIPELINE STATUS] Vector collection read failed: {exc!r}")
+        metadata, count = {}, None
 
-    anonymize = _anonymize_step(_entry(saved, "anonymize"), active_step)
-    vectors = _vectors_step(
-        _entry(saved, "vectors"),
-        active_step,
-        ready=ready,
-        metadata=metadata,
-        count=count,
-        anonymize=anonymize,
+    anonymize = _safe(
+        "anonymize", lambda: _anonymize_step(_entry(saved, "anonymize"), active_step)
     )
-    rerank = _rerank_step(
-        _entry(saved, "rerank"),
-        active_step,
-        ready=ready,
-        metadata=metadata,
-        vectors=vectors,
+    vectors = _safe(
+        "vectors",
+        lambda: _vectors_step(
+            _entry(saved, "vectors"),
+            active_step,
+            ready=ready,
+            metadata=metadata,
+            count=count,
+            anonymize=anonymize,
+        ),
+        fallback_extra={"checkpoint": None},
     )
-    insights = _insights_step(
-        _entry(saved, "insights"),
-        active_step,
-        ready=ready,
-        vectors=vectors,
-        rerank=rerank,
+    rerank = _safe(
+        "rerank",
+        lambda: _rerank_step(
+            _entry(saved, "rerank"),
+            active_step,
+            ready=ready,
+            metadata=metadata,
+            vectors=vectors,
+        ),
+    )
+    insights = _safe(
+        "insights",
+        lambda: _insights_step(
+            _entry(saved, "insights"),
+            active_step,
+            ready=ready,
+            vectors=vectors,
+            rerank=rerank,
+        ),
     )
     steps = {
         "anonymize": anonymize,

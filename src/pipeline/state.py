@@ -1,6 +1,6 @@
 """Persistent per-step pipeline state in data/pipeline_state.json.
 
-Shape: {"anonymize": {"completed_at", "acknowledged"},
+Shape: {"anonymize": {"completed_at", "acknowledged", "acknowledged_report"},
         "vectors": {"completed_at", "model", "documents", "tier"?},
         "rerank": {"completed_at", "skipped", "stats"},
         "insights": {"completed_at"}}
@@ -12,6 +12,9 @@ from pathlib import Path
 
 from src.config.paths import PIPELINE_STATE_FILE
 from src.pipeline.jobs import state_lock
+
+
+ACK_RESET = {"acknowledged": False, "acknowledged_report": None}
 
 
 def utc_now_iso() -> str:
@@ -34,7 +37,10 @@ def load_state(path: Path | None = None) -> dict:
 def _write_state(data: dict, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, path)
 
 
@@ -57,9 +63,20 @@ def mark_completed(step: str, *, path: Path | None = None, **extra) -> None:
     """
     changes = {"completed_at": utc_now_iso()}
     if step == "anonymize":
-        changes["acknowledged"] = False
+        changes.update(ACK_RESET)
     changes.update(extra)
     _update_step(step, changes, path)
+
+
+def reset_acknowledgement(*, path: Path | None = None) -> None:
+    _update_step("anonymize", dict(ACK_RESET), path)
+
+
+def acknowledge_review(report_id: str, *, path: Path | None = None) -> None:
+    """Record that the user reviewed the possible misses of report `report_id`."""
+    _update_step(
+        "anonymize", {"acknowledged": True, "acknowledged_report": report_id}, path
+    )
 
 
 def set_flag(step: str, key: str, value, *, path: Path | None = None) -> None:
