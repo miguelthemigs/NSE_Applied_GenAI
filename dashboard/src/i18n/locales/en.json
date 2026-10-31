@@ -56,6 +56,7 @@
   "progress.eta": "about {min} min left",
   "download.failed": "The download didn't finish. Check the internet connection and try again.",
   "error.llm_unavailable": "The AI model couldn't be started. Try again; if it keeps failing, restart the app.",
+  "error.model_missing": "The AI model isn't on this computer yet. Start it first in step 4, Write summaries.",
   "stage.load": "Load model",
   "stage.read": "Read data",
   "stage.process": "Process",

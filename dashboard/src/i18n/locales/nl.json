@@ -56,6 +56,7 @@
   "progress.eta": "nog ongeveer {min} min",
   "download.failed": "Downloaden is niet gelukt. Controleer de internetverbinding en probeer het opnieuw.",
   "error.llm_unavailable": "Het AI-model kon niet worden gestart. Probeer het opnieuw; lukt het niet, start de app opnieuw.",
+  "error.model_missing": "Het AI-model staat nog niet op deze computer. Start het eerst bij stap 4, Samenvattingen schrijven.",
   "stage.load": "Model laden",
   "stage.read": "Gegevens lezen",
   "stage.process": "Verwerken",

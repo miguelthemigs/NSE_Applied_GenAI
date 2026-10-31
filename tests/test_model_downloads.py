@@ -8,6 +8,7 @@ import io
 import json
 from pathlib import Path
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -15,7 +16,7 @@ from unittest import mock
 from flask import Flask
 
 from src.pipeline import model_downloads
-from src.pipeline.model_downloads import DownloadError, download_events, ensure_downloaded
+from src.pipeline.model_downloads import DownloadError, ModelNotDownloadedError, download_events, ensure_downloaded
 
 llama_models = import_module("src.pipeline.04_generation.llama_cpp_models")
 llm_clients = import_module("src.pipeline.04_generation.llm_clients")
@@ -95,22 +96,23 @@ class DownloadEventsTests(unittest.TestCase):
         self.assertTrue(all(e["params"]["bytes_total"] is None for e in events))
         self.assertEqual(events[-1]["params"]["bytes_done"], 500)
 
-    def test_seed_total_is_replaced_by_the_bar_in_one_step(self):
-        # Partial cache: seed = missing bytes; after the first bar update use the bar's n/total only.
+    def test_total_never_dips_below_the_seed(self):
+        # Partial cache: seed = missing bytes; the bar's total may come in lower (dedup, batches).
         def fake(repo_id, *, on_progress, on_start, **_):
             on_start(1000)
             time.sleep(0.03)
             on_progress(10, 900)
             time.sleep(0.03)
-            on_progress(900, 900)
+            on_progress(900, 1200)
             time.sleep(0.03)
             return Path("/snap")
 
         events = _events(download_events("org/model", "quick", downloader=fake, **FAST))
         pairs = [(e["params"]["bytes_done"], e["params"]["bytes_total"]) for e in events]
         self.assertEqual(pairs[0], (0, 1000))
-        self.assertTrue(all(total == 900 for _, total in pairs[1:]))
-        self.assertEqual(pairs[-1], (900, 900))
+        self.assertIn((10, 1000), pairs)
+        self.assertTrue(all(total >= 1000 for _, total in pairs))
+        self.assertEqual(pairs[-1], (1200, 1200))
 
     def test_at_most_one_event_per_interval_plus_a_final_one(self):
         def fake(repo_id, *, on_progress, on_start, **_):
@@ -210,6 +212,21 @@ class EnsureDownloadedTests(unittest.TestCase):
             self.assertEqual(path.resolve(), snap.resolve())
             self.assertEqual(progress, [(7, 7)])
 
+    def test_offline_cache_must_match_every_pattern(self):
+        with tempfile.TemporaryDirectory() as cache:
+            root = Path(cache) / "models--org--model"
+            (root / "refs").mkdir(parents=True)
+            (root / "refs" / "main").write_text("abc")
+            snap = root / "snapshots" / "abc"
+            snap.mkdir(parents=True)
+            (snap / "model-UD-Q4_K_XL.gguf").write_bytes(b"x")
+            with mock.patch.dict("os.environ", {"HF_HUB_OFFLINE": "1"}):
+                with self.assertRaises(DownloadError):
+                    ensure_downloaded(
+                        "org/model", allow_patterns=["*UD-Q4_K_XL*.gguf", "mmproj-BF16.gguf"],
+                        on_progress=lambda d, t: None, cache_dir=cache,
+                    )
+
     def test_offline_without_cache_fails_clearly(self):
         with tempfile.TemporaryDirectory() as cache, mock.patch.dict("os.environ", {"HF_HUB_OFFLINE": "1"}):
             with self.assertRaises(DownloadError):
@@ -242,6 +259,36 @@ class ProgressBarSelectionTests(unittest.TestCase):
         big.update(300)
         small.update(10)  # smaller total than the bar already chosen
         self.assertEqual(seen, [(50, 100), (300, 900)])
+
+    def test_concurrent_updates_publish_in_order(self):
+        seen, active, overlaps = [], [0], []
+
+        def on_progress(done, total):
+            active[0] += 1
+            if active[0] > 1:
+                overlaps.append(done)
+            seen.append(done)
+            time.sleep(0)  # invite a thread switch inside the callback
+            active[0] -= 1
+
+        cls = model_downloads._ByteBarTracker(on_progress).tqdm_class()
+        agg = cls(desc=model_downloads.AGGREGATE_BAR_DESC, unit="B", total=8 * 300)
+        start = threading.Barrier(8)
+
+        def worker():
+            start.wait()
+            for _ in range(300):
+                agg.update(1)
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(overlaps, [])
+        self.assertEqual(seen, sorted(seen))
+        self.assertEqual(len(seen), 2400)
+        self.assertEqual(seen[-1], 2400)
 
     def test_aggregate_desc_matches_installed_huggingface_hub(self):
         source = inspect.getsource(import_module("huggingface_hub._snapshot_download"))
@@ -280,8 +327,8 @@ class LlamaServerLaunchTests(unittest.TestCase):
         self.assertEqual(env["HF_HUB_CACHE"], cache)
         self.assertEqual(env["LLAMA_CACHE"], cache)
 
-    def test_files_are_made_local_before_the_server_starts(self):
-        client = llm_clients.LlamaCppClient()
+    def _start(self, client, **patches):
+        """Run _start_llama_server with the process plumbing mocked; returns (order, popen)."""
         order = []
         process = mock.Mock(pid=4321)
         process.poll.return_value = None
@@ -291,16 +338,78 @@ class LlamaServerLaunchTests(unittest.TestCase):
             mock.patch.object(llm_clients.LlamaCppClient, "_managed_log_path", Path(tmp) / "llama.log"),
             mock.patch.object(llm_clients.LlamaCppClient, "_managed_pid_path", Path(tmp) / "llama.pid"),
             mock.patch.object(client, "_check_llama_server_binary"),
-            mock.patch.object(model_downloads, "ensure_downloaded", side_effect=lambda *a, **k: order.append("download")) as ensure,
             mock.patch.object(llm_clients.subprocess, "Popen", side_effect=lambda *a, **k: order.append("popen") or process) as popen,
             mock.patch.object(client, "_wait_until_server_ready", side_effect=lambda *_: order.append("wait")),
         ):
             client._start_llama_server(MODEL_12B)
-        self.assertEqual(order, ["download", "popen", "wait"])
+        return order, popen
+
+    def test_local_files_are_checked_before_the_server_starts(self):
+        client = llm_clients.LlamaCppClient()
+        calls = []
+        with mock.patch.object(model_downloads, "require_local", side_effect=lambda *a, **k: calls.append(a)):
+            order, popen = self._start(client)
+        self.assertEqual(order, ["popen", "wait"])
         model = llama_models.resolve_llama_cpp_model(MODEL_12B)
-        self.assertEqual(ensure.call_args.args[0], model.repo_id)
-        self.assertEqual(ensure.call_args.kwargs["allow_patterns"], model.download_patterns)
+        self.assertEqual(calls, [(model.repo_id, model.download_patterns)])
         self.assertEqual(popen.call_args.kwargs["env"]["HF_HUB_CACHE"], model_downloads.hub_cache_dir())
+
+    def test_missing_files_raise_fast_and_never_download(self):
+        from huggingface_hub.errors import LocalEntryNotFoundError
+
+        client = llm_clients.LlamaCppClient()
+
+        def local_only(*args, **kwargs):
+            if not kwargs.get("local_files_only"):
+                raise AssertionError("tried to download")
+            raise LocalEntryNotFoundError("not cached")
+
+        started = time.monotonic()
+        with (
+            mock.patch("huggingface_hub.snapshot_download", side_effect=local_only) as snap,
+            mock.patch("huggingface_hub.HfApi") as api,
+        ):
+            with self.assertRaisesRegex(ModelNotDownloadedError, "model not downloaded; start it from step 4"):
+                self._start(client)
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertTrue(snap.called)
+        self.assertTrue(all(c.kwargs.get("local_files_only") for c in snap.call_args_list))
+        api.assert_not_called()
+
+
+class ThemeSummaryModelMissingTests(unittest.TestCase):
+    def test_uncached_model_returns_model_missing_quickly(self):
+        import requests
+        from huggingface_hub.errors import LocalEntryNotFoundError
+
+        app = Flask(__name__)
+        app.register_blueprint(insight_routes.insight_bp)
+        generation = insight_routes.generation
+        client = llm_clients.LlamaCppClient()
+        started = time.monotonic()
+        with (
+            mock.patch.object(generation, "load_cache", return_value={}),
+            mock.patch.object(generation.retrieval, "get_collection", return_value=mock.Mock()),
+            mock.patch.object(generation, "get_llm_client", return_value=client),
+            mock.patch.object(client, "_get_router_models", side_effect=requests.exceptions.ConnectionError("down")),
+            mock.patch.object(client, "_check_llama_server_binary"),
+            mock.patch.object(client, "unload"),
+            mock.patch.object(llm_clients.LlamaCppClient, "_managed_process", None),
+            mock.patch("huggingface_hub.snapshot_download", side_effect=LocalEntryNotFoundError("not cached")) as snap,
+            mock.patch.object(llm_clients.subprocess, "Popen") as popen,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            res = app.test_client().post(
+                "/api/theme-summary",
+                json={"theme": "Teachers", "query": "Teachers", "llm_model": MODEL_12B, "allow_model_download": True},
+            )
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertEqual(res.status_code, 409)
+        body = res.get_json()
+        self.assertEqual(body["code"], "error.model_missing")
+        self.assertIn("start it from step 4", body["error"])
+        self.assertTrue(all(c.kwargs.get("local_files_only") for c in snap.call_args_list))
+        popen.assert_not_called()
 
 
 class StartStreamRouteTests(unittest.TestCase):
@@ -361,6 +470,16 @@ class StartStreamRouteTests(unittest.TestCase):
         self.assertEqual(events[-1]["code"], "error.download_failed")
         llm.ensure_model_available.assert_not_called()
 
+    def test_missing_model_at_start_maps_to_model_missing(self):
+        llm = mock.Mock()
+        llm.ensure_model_available.side_effect = ModelNotDownloadedError("model not downloaded; start it from step 4")
+        with (
+            mock.patch.object(model_downloads, "ensure_downloaded", return_value=Path("/snap")),
+            mock.patch.object(insight_routes.generation, "get_llm_client", return_value=llm),
+        ):
+            _, events = self._post({"model_id": MODEL_12B})
+        self.assertEqual(events[-1]["code"], "error.model_missing")
+
     def test_unknown_model_is_a_400(self):
         res = self.client.post("/api/llm-models/start-stream", json={"model_id": "nope"})
         self.assertEqual(res.status_code, 400)
@@ -406,6 +525,25 @@ class VectorBuildDownloadTests(unittest.TestCase):
         out, _, load = self._build(fake)
         self.assertEqual(out[-1]["code"], "error.download_failed")
         load.assert_not_called()
+
+
+class PrecomputeModelMissingTests(unittest.TestCase):
+    def test_missing_model_ends_the_run_with_model_missing(self):
+        generation = insight_routes.generation
+        llm = mock.Mock()
+        llm.ensure_model_available.side_effect = ModelNotDownloadedError("model not downloaded; start it from step 4")
+        with (
+            mock.patch.object(generation, "load_cache", return_value={}),
+            mock.patch.object(generation, "get_llm_client", return_value=llm),
+        ):
+            events = _events(generation.precompute_insights_stream(
+                themes=[{"name": "Teachers"}, {"name": "Assessment"}],
+                llm_model=MODEL_12B, allow_model_download=True,
+            ))
+        self.assertEqual(events[-1]["status"], "error")
+        self.assertEqual(events[-1]["code"], "error.model_missing")
+        self.assertFalse(any(e["status"] == "success" for e in events))
+        llm.ensure_model_available.assert_called_once()
 
 
 class FrontendTierCopyTests(unittest.TestCase):

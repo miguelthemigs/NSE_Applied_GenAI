@@ -1,4 +1,4 @@
-import { downloadFromEvent, streamErrorKey } from './downloadProgress'
+import { downloadFromEvent, llmErrorKey, streamErrorKey } from './downloadProgress'
 
 describe('downloadFromEvent', () => {
   const event = (params) => ({ status: 'progress', stage: 'download', params })
@@ -28,5 +28,14 @@ describe('streamErrorKey', () => {
     expect(streamErrorKey('error.download_failed')).toBe('download.failed')
     expect(streamErrorKey('error.llm_unavailable')).toBe('error.llm_unavailable')
     expect(streamErrorKey('error.backend')).toBeNull()
+  })
+})
+
+describe('llmErrorKey', () => {
+  it('adds the LLM-only missing-model copy on top of streamErrorKey', () => {
+    expect(llmErrorKey('error.model_missing')).toBe('error.model_missing')
+    expect(llmErrorKey('error.llm_unavailable')).toBe('error.llm_unavailable')
+    expect(llmErrorKey('error.backend')).toBeNull()
+    expect(streamErrorKey('error.model_missing')).toBeNull()
   })
 })

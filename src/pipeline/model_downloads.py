@@ -23,13 +23,21 @@ MIN_EVENT_INTERVAL = 0.5
 POLL_INTERVAL = 0.1
 HUB_TIMEOUT_SECONDS = 3
 # What SentenceTransformer / CrossEncoder load: configs, tokenizer, weights, module folders.
-EMBEDDING_ALLOW_PATTERNS = ("*.json", "*.safetensors", "*.txt", "*.jinja", "*.model")
+# Every pattern must match a cached file for an offline cache to count as complete,
+# so list only kinds every supported model (Octen, zerank) has.
+EMBEDDING_ALLOW_PATTERNS = ("*.json", "*.safetensors", "*.txt", "*.jinja")
 
 ProgressCallback = Callable[[int | None, int | None], None]
 
 
 class DownloadError(RuntimeError):
     """The model is not on this computer and could not be downloaded."""
+
+
+class ModelNotDownloadedError(RuntimeError):
+    """The model's files are not local, and this path may not download them (error.model_missing)."""
+
+    code = "error.model_missing"
 
 
 def hub_cache_dir() -> str:
@@ -98,20 +106,43 @@ def plan_download(repo_id: str, allow_patterns: Iterable[str] | None = None, cac
     return DownloadPlan(total, missing_bytes, tuple(missing), snapshot)
 
 
-def _local_snapshot(repo_id: str, allow_patterns: list[str] | None, cache_dir: str | None) -> tuple[Path, int]:
-    """The cached snapshot when the Hub can't be reached; DownloadError when nothing usable is cached."""
+def local_snapshot(repo_id: str, allow_patterns: Iterable[str] | None = None, cache_dir: str | None = None) -> tuple[Path, int] | None:
+    """(snapshot folder, bytes) when the cache holds a file for EVERY pattern; else None.
+
+    Local only: snapshot_download(local_files_only=True) never contacts the Hub.
+    """
     from huggingface_hub import snapshot_download
 
-    reason = "offline mode is on (HF_HUB_OFFLINE)" if _offline() else "the Hugging Face Hub cannot be reached"
+    patterns = _patterns(allow_patterns)
     try:
-        path = Path(snapshot_download(repo_id, allow_patterns=allow_patterns, cache_dir=cache_dir, local_files_only=True))
-    except Exception as exc:
-        raise DownloadError(f"{repo_id} is not on this computer and {reason}.") from exc
+        path = Path(snapshot_download(repo_id, allow_patterns=patterns, cache_dir=cache_dir, local_files_only=True))
+    except Exception:
+        return None
     files = {p.relative_to(path).as_posix(): p for p in path.rglob("*") if p.is_file()}
-    chosen = _matching(files, allow_patterns)
-    if not chosen:
-        raise DownloadError(f"{repo_id} is not on this computer and {reason}.")
+    if not files:
+        return None
+    for pattern in patterns or [None]:
+        if not _matching(files, [pattern] if pattern else None):
+            return None
+    chosen = _matching(files, patterns)
     return path, sum(files[name].stat().st_size for name in chosen)
+
+
+def require_local(repo_id: str, allow_patterns: Iterable[str] | None = None, cache_dir: str | None = None) -> Path:
+    """The cached snapshot, or ModelNotDownloadedError at once. Never downloads, never calls the Hub."""
+    found = local_snapshot(repo_id, allow_patterns, cache_dir)
+    if found is None:
+        raise ModelNotDownloadedError(f"model not downloaded; start it from step 4 ({repo_id} is not on this computer).")
+    return found[0]
+
+
+def _local_snapshot(repo_id: str, allow_patterns: list[str] | None, cache_dir: str | None) -> tuple[Path, int]:
+    """The cached snapshot when the Hub can't be reached; DownloadError when it is not complete."""
+    found = local_snapshot(repo_id, allow_patterns, cache_dir)
+    if found is None:
+        reason = "offline mode is on (HF_HUB_OFFLINE)" if _offline() else "the Hugging Face Hub cannot be reached"
+        raise DownloadError(f"{repo_id} is not (completely) on this computer and {reason}.")
+    return found
 
 
 class _ByteBarTracker:
@@ -131,21 +162,28 @@ class _ByteBarTracker:
         _, state = self._choice.read()
         return state["done"], state["total"]
 
-    def observe(self, bar) -> None:
-        if getattr(bar, "unit", None) != "B":
-            return
-        total = int(bar.total) if bar.total else None
-        done = int(bar.n or 0)
-        key = (getattr(bar, "desc", "") == AGGREGATE_BAR_DESC, total or 0)
+    def update(self, bar, base_update: Callable, n) -> object:
+        """Run the bar's own update and publish it, all under one lock.
 
-        def choose(state: dict) -> bool:
+        Download threads update the bars concurrently: serialising tqdm's
+        `n += ...` and the callback keeps the published values in order, also
+        across a switch to another bar.
+        """
+
+        def step(state: dict):
+            result = base_update(n)
+            if getattr(bar, "unit", None) != "B":
+                return result
+            total = int(bar.total) if bar.total else None
+            done = int(bar.n or 0)
+            key = (getattr(bar, "desc", "") == AGGREGATE_BAR_DESC, total or 0)
             if state["bar"] not in (None, id(bar)) and key < state["key"]:
-                return False
+                return result
             state.update(bar=id(bar), key=key, done=done, total=total)
-            return True
-
-        if self._choice.mutate(choose):
             self._on_progress(done, total)
+            return result
+
+        return self._choice.mutate(step)
 
     def tqdm_class(self) -> type:
         from tqdm.auto import tqdm
@@ -158,9 +196,7 @@ class _ByteBarTracker:
                 super().__init__(*args, **kwargs)
 
             def update(self, n=1):
-                result = super().update(n)
-                tracker.observe(self)
-                return result
+                return tracker.update(self, super().update, n)
 
         return ProgressTqdm
 
@@ -208,7 +244,7 @@ def ensure_downloaded(
     except Exception as exc:
         raise DownloadError(f"Downloading {repo_id} failed: {exc}") from exc
     done, total = tracker.last()
-    final = total or plan.missing_bytes or None
+    final = max(total or 0, plan.missing_bytes or 0) or None
     on_progress(final if final else done, final)
     return Path(path)
 
@@ -217,11 +253,9 @@ def _apply_progress(done: int | None, total: int | None) -> Callable[[dict], Non
     def apply(state: dict) -> None:
         if not state["started"]:
             return  # warm cache: ensure_downloaded's no-op report is not a download
-        new_total = total or None
-        if state["from_bar"]:
-            new_done = max(state["done"], done or 0)
-        else:
-            new_done = done or 0  # first bar update: switch base in one step, never mix
+        # The shown total never dips below the seed (the missing bytes from model_info).
+        new_total = max(t for t in (state["seed"], total, 0) if t is not None) or None
+        new_done = max(state["done"], done or 0) if state["from_bar"] else (done or 0)
         if new_total is not None:
             new_done = min(new_done, new_total)
         state.update(from_bar=True, done=new_done, total=new_total)
@@ -251,10 +285,10 @@ def download_events(
     failure it yields one `error.download_failed` event and returns False.
     """
     downloader = downloader or ensure_downloaded
-    progress = jobs.ProgressSnapshot({"started": False, "from_bar": False, "done": 0, "total": None})
+    progress = jobs.ProgressSnapshot({"started": False, "from_bar": False, "done": 0, "total": None, "seed": None})
 
     def on_start(missing: int | None) -> None:
-        progress.mutate(lambda s: s.update(started=True, from_bar=False, done=0, total=missing or None))
+        progress.mutate(lambda s: s.update(started=True, from_bar=False, done=0, total=missing or None, seed=missing or None))
 
     def on_progress(done: int | None, total: int | None) -> None:
         progress.mutate(_apply_progress(done, total))

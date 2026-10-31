@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useThemeSummary } from '../hooks/useThemeSummary'
 import { useI18n } from '../i18n/I18nProvider'
+import { llmErrorKey } from '../utils/downloadProgress'
 
 // Removed static DonutChart as per user request
 
@@ -76,7 +77,7 @@ export default function DetailDrawer({ theme, onClose }) {
             </div>
           ) : liveData?.error ? (
             <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">
-              <p>{t('detail.queryFailed')}</p>
+              <p>{t(llmErrorKey(liveData.code) ?? 'detail.queryFailed')}</p>
               <details>
                 <summary className="cursor-pointer">{t('action.details')}</summary>
                 <p className="mt-1 break-words">{liveData.error}</p>

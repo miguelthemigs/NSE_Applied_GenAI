@@ -14,7 +14,7 @@ import DoneCard from './pipeline/DoneCard';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 import { DONE_CARD_STATES } from '../utils/doneMessage';
-import { downloadFromEvent, streamErrorKey } from '../utils/downloadProgress';
+import { downloadFromEvent, llmErrorKey } from '../utils/downloadProgress';
 
 const PILL = {
   done: 'bg-success-container text-success',
@@ -201,6 +201,7 @@ export default function InsightGenerator({ onNavigate }) {
   const startModel = async () => {
     const downloadTier = advancedModel ? null : tier;
     let ready = false;
+    let failed = false;
     try {
       await stream.start('/api/llm-models/start-stream', { model_id: selectedModel, provider: LLM_PROVIDER }, {
         onEvent: (data) => {
@@ -212,16 +213,23 @@ export default function InsightGenerator({ onNavigate }) {
             ready = true;
             setDownload(null);
           } else if (data.status === 'error') {
+            failed = true;
             setDownload(null);
-            setRunError({ key: streamErrorKey(data.code) ?? 'error.llm_unavailable', detail: data.error || data.message || '' });
+            setRunError({ key: llmErrorKey(data.code) ?? 'error.llm_unavailable', detail: data.error || data.message || '' });
             setLogs(prev => [...prev, { kind: 'error', text: t('ins.log.error', { reason: data.error || data.message || '' }) }]);
           }
         }
       });
     } catch (e) {
       if (e?.name === 'AbortError') return false;
+      failed = true;
       setDownload(null);
-      setRunError({ key: 'error.llm_unavailable', detail: e.message });
+      setRunError({ key: llmErrorKey(e.code) ?? 'error.llm_unavailable', detail: e.message });
+    }
+    // A stream that ends with neither success nor error (connection dropped) is a failure too.
+    if (!ready && !failed) {
+      setDownload(null);
+      setRunError({ key: 'error.llm_unavailable', detail: '' });
     }
     return ready;
   };
@@ -284,7 +292,7 @@ export default function InsightGenerator({ onNavigate }) {
         if (data.message) setLogs(prev => [...prev, { kind: 'ok', text: data.message }]);
       } else if (data.status === 'error') {
         setDownload(null);
-        setRunError({ key: streamErrorKey(data.code) ?? 'state.error', detail: data.message || data.error || '' });
+        setRunError({ key: llmErrorKey(data.code) ?? 'state.error', detail: data.message || data.error || '' });
         setLogs(prev => [...prev, { kind: 'error', text: t('ins.log.error', { reason: data.message || data.error || '' }) }]);
       }
     };

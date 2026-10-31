@@ -4,7 +4,7 @@ import json
 
 from flask import Blueprint, Response, jsonify, request
 
-from src.pipeline import jobs, state
+from src.pipeline import jobs, model_downloads, state
 
 insight_bp = Blueprint("insight", __name__)
 generation = import_module("src.pipeline.04_generation.service")
@@ -68,6 +68,8 @@ def theme_summary():
             filters=_filters_from_payload(data),
         )
         return jsonify(payload)
+    except model_downloads.ModelNotDownloadedError as exc:
+        return _model_missing(exc)
     except ValueError as exc:
         return jsonify({"status": "error", "error": str(exc)}), 400
     except generation.LocalModelConnectionError as exc:
@@ -228,6 +230,8 @@ def start_llm_model():
                 "model": llama_cpp_models.resolve_llama_cpp_model(model_name).id,
             }
         )
+    except model_downloads.ModelNotDownloadedError as exc:
+        return _model_missing(exc)
     except ValueError as exc:
         return jsonify({"status": "error", "error": str(exc)}), 400
     except Exception as exc:
@@ -290,6 +294,11 @@ def _not_ready_overview(reason: str) -> dict:
         "themes": {},
         "themes_expected": 7,
     }
+
+
+def _model_missing(exc: Exception):
+    """409 with error.model_missing: the files are not local and only step 4's start-stream downloads."""
+    return jsonify({"status": "error", "code": "error.model_missing", "error": str(exc)}), 409
 
 
 def _filters_from_payload(data: dict) -> dict:

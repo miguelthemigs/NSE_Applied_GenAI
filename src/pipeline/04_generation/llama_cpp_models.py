@@ -7,8 +7,8 @@ from src.config.settings import LLAMA_CPP_N_GPU_LAYERS
 
 DEFAULT_QUANTIZATION = "UD-Q4_K_XL"
 DEFAULT_SERVER_ARGS = ("--skip-chat-parsing",)
-# Files are made local first (model_downloads.ensure_downloaded), so the server
-# never downloads: a missing file fails fast instead of a silent re-download.
+# Only POST /api/llm-models/start-stream downloads (visibly); the server never
+# does: a missing file fails fast instead of a silent re-download.
 OFFLINE_SERVER_ARGS = ("--offline",)
 
 

@@ -39,6 +39,12 @@ SUBTHEME_MANIFEST_FIELD = "subtheme_manifest"
 MAX_SUBTHEMES = 5
 
 
+def _reraise_model_missing(exc: Exception) -> None:
+    """Per-theme handlers skip and continue; a missing model must end the run instead."""
+    if isinstance(exc, model_downloads.ModelNotDownloadedError):
+        raise exc
+
+
 def _ensure_llm_eligible_theme(theme_name: str) -> None:
     if theme_name == LOW_INFORMATION_THEME:
         raise ValueError(
@@ -802,6 +808,7 @@ def precompute_insights_stream(
                 )
                 cache[_cache_key(theme_name, filters)] = response_data
             except Exception as exc:
+                _reraise_model_missing(exc)
                 yield stream_event("progress", stage="process", message=f"Skipped {theme_name}: {str(exc)}", progress=_pct(i + 1), theme=theme_name)
                 continue
             save_cache(cache)
@@ -857,6 +864,7 @@ def precompute_insights_stream(
                         subtheme_cache[sub_key] = sub_data
                         save_subtheme_cache(subtheme_cache)
                     except Exception as exc:
+                        _reraise_model_missing(exc)
                         yield stream_event("progress", stage="process", message=f"Sub-theme skipped {subtheme}: {str(exc)}", progress=_pct(i + 1), theme=theme_name)
                         continue
 
@@ -915,6 +923,7 @@ def precompute_insights_stream(
                         )
                         cache[_cache_key(theme_name, combo)] = response_data
                     except Exception as exc:
+                        _reraise_model_missing(exc)
                         yield stream_event("progress", stage="process", message=f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
                                     f"Skipped {theme_name}: {str(exc)}", progress=base_progress, theme=theme_name)
                         continue
@@ -968,12 +977,15 @@ def precompute_insights_stream(
                                 subtheme_cache[sub_key] = sub_data
                                 save_subtheme_cache(subtheme_cache)
                             except Exception as exc:
+                                _reraise_model_missing(exc)
                                 yield stream_event("progress", stage="process", message=f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
                                             f"Sub-theme skipped {subtheme}: {str(exc)}", progress=base_progress, theme=theme_name)
                                 continue
 
         yield stream_event("success", message="All insights generated!", progress=100)
 
+    except model_downloads.ModelNotDownloadedError as exc:
+        yield stream_event("error", code="error.model_missing", message=str(exc))
     except Exception as exc:
         yield stream_event("error", code="error.backend", message=str(exc))
     finally:
@@ -1087,11 +1099,14 @@ def precompute_subthemes_stream(
                             break
                     save_cache(main_cache)
             except Exception as exc:
+                _reraise_model_missing(exc)
                 yield stream_event("progress", stage="process", message=f"[{combo_label}] Skipped {subtheme}: {str(exc)}", progress=progress, theme=theme_name)
                 continue
 
         yield stream_event("success", message="All subtheme insights generated!", progress=100)
 
+    except model_downloads.ModelNotDownloadedError as exc:
+        yield stream_event("error", code="error.model_missing", message=str(exc))
     except Exception as exc:
         yield stream_event("error", code="error.backend", message=str(exc))
     finally:
@@ -1167,6 +1182,9 @@ def start_llm_stream(model_name: str, provider: str = DEFAULT_LLM_PROVIDER):
                        message=f"Starting {provider} with '{model.id}'...")
     try:
         get_llm_client(provider).ensure_model_available(model.id, allow_download=True)
+    except model_downloads.ModelNotDownloadedError as exc:
+        yield stream_event("error", code="error.model_missing", params={"tier": tier, "model": model.id}, error=str(exc))
+        return
     except Exception as exc:
         print(f"[LLAMA_CPP START ERROR] {exc}")
         yield stream_event("error", code="error.llm_unavailable", params={"tier": tier, "model": model.id}, error=str(exc))

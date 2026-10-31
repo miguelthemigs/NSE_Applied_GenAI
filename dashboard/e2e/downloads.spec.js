@@ -111,4 +111,18 @@ test.describe('visible model downloads', () => {
     expect(mockApi.requestsTo('/api/precompute-insights', 'POST')).toHaveLength(0)
     expect(mockApi.requests.filter((r) => r.path === '/api/llm-models/start')).toHaveLength(0)
   })
+
+  test('a start-stream that ends without success or error still stops with the translated message', async ({ page, mockApi }) => {
+    await mockApi({
+      ...INSIGHT_ROUTES,
+      'POST /api/llm-models/start-stream': { ndjson: [{ status: 'progress', stage: 'load' }] },
+      'POST /api/precompute-insights': { ndjson: [{ status: 'success', progress: 100 }] },
+    })
+    await page.goto('/pipeline-demo?step=insights')
+    const insights = page.locator('#step-panel-insights')
+    await insights.getByRole('button', { name: /Thema's samenvatten/ }).click()
+    await expect(insights.getByRole('alert').filter({ hasText: 'Het AI-model kon niet worden gestart' })).toBeVisible()
+    expect(mockApi.requestsTo('/api/llm-models/start-stream', 'POST')).toHaveLength(1)
+    expect(mockApi.requestsTo('/api/precompute-insights', 'POST')).toHaveLength(0)
+  })
 })

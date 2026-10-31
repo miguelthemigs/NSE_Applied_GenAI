@@ -48,7 +48,8 @@ export function useThemeSummary(theme, filters = {}) {
         if (data.status === 'success') {
           setLiveData(data)
         } else {
-          setLiveData({ error: data.error || 'Failed to generate summary' })
+          // `code` lets the UI translate the reason (error.model_missing); `error` is the raw text for Details.
+          setLiveData({ error: data.error || 'Failed to generate summary', code: data.code ?? null })
         }
       } catch (e) {
         if (isMounted) setLiveData({ error: 'Failed to connect to backend server.' })

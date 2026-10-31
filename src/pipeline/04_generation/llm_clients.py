@@ -131,14 +131,12 @@ class LlamaCppClient:
             return
 
         self._check_llama_server_binary(model_name)
-        # The server runs with --offline: make the files local first. The startup
-        # timeout below therefore only covers loading, never a download.
+        # The server runs with --offline and only POST /api/llm-models/start-stream
+        # downloads (visibly). Here the files must already be local: a fast, clear
+        # ModelNotDownloadedError (error.model_missing) instead of a silent download.
+        # The startup timeout below therefore only covers loading.
         model = resolve_llama_cpp_model(model_name)
-        model_downloads.ensure_downloaded(
-            model.repo_id,
-            allow_patterns=model.download_patterns,
-            on_progress=lambda _done, _total: None,
-        )
+        model_downloads.require_local(model.repo_id, model.download_patterns)
         self._managed_log_path.parent.mkdir(parents=True, exist_ok=True)
         command = self._server_command(model_name)
         with self._managed_log_path.open("ab") as log_file:

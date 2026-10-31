@@ -20,3 +20,13 @@ export function streamErrorKey(code) {
   if (code === 'error.llm_unavailable') return 'error.llm_unavailable'
   return null
 }
+
+/**
+ * Headline for a failed LLM call (start-stream, precompute, theme summary). Adds
+ * error.model_missing, which only means "start it from step 4" for the LLM; an embedding
+ * model's error.model_missing (step 2) keeps its own copy.
+ */
+export function llmErrorKey(code) {
+  if (code === 'error.model_missing') return 'error.model_missing'
+  return streamErrorKey(code)
+}

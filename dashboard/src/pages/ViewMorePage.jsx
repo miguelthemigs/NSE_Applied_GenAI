@@ -15,6 +15,7 @@ import { buildRealTheme, REAL_THEME_META, THEME_NAME_BY_ID, themeLabel, themeTex
 import { useI18n } from "../i18n/I18nProvider";
 import { motion } from "framer-motion";
 import { apiUrl } from "../services/api";
+import { llmErrorKey } from "../utils/downloadProgress";
 import {
   filtersFromSearchParams,
   filtersToApiParams,
@@ -1276,6 +1277,20 @@ export default function ViewMorePage() {
             </div>
           </div>
         </motion.section>
+
+        {/* The model is not downloaded yet: say where to start it (cached text still shows below). */}
+        {liveData?.code === "error.model_missing" && (
+          <div role="status" className="mt-6 p-4 rounded-2xl bg-warning-container text-on-surface flex items-start gap-3">
+            <span className="material-symbols-outlined text-2xl shrink-0" aria-hidden="true">info</span>
+            <div className="min-w-0">
+              <p className="m-0 font-semibold">{t(llmErrorKey(liveData.code))}</p>
+              <details className="mt-1 text-sm">
+                <summary className="cursor-pointer">{t("action.details")}</summary>
+                <p className="mt-1 break-words">{liveData.error}</p>
+              </details>
+            </div>
+          </div>
+        )}
 
         {/* ── Quick Stats ── */}
         <div className="mt-6">
