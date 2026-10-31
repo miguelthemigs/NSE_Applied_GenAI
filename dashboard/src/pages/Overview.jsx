@@ -172,6 +172,11 @@ export default function Overview() {
   const hasNoMatchingResponses = hasActiveFilters && overviewMeta?.totalFilteredDocuments === 0
   const showNoSubthemeData = !hasNoMatchingResponses && hasActiveFilters && !hasFilteredSubthemeData
   const displayThemes = hasNoMatchingResponses ? [] : themes
+  // Nothing to show or filter yet (mockup Overview): plain disabled selects, no theme
+  // heading and no sub-theme card under the state card.
+  const noThemes = !loadingThemes && ['no_summaries', 'not_ready', 'offline', 'error'].includes(overviewKind)
+  const filtersOff = !loadingThemes && ['no_summaries', 'not_ready', 'offline'].includes(overviewKind)
+  const filterVariant = { variant: filtersOff ? 'select' : 'dropdown', disabled: filtersOff }
 
   return (
     <main className="max-w-[1040px] mx-auto px-4 sm:px-6 pt-8 pb-16 flex flex-col gap-5">
@@ -184,6 +189,7 @@ export default function Overview() {
           <div className="flex flex-col gap-1.5 max-w-[640px]">
             <span className="text-xs font-bold tracking-[0.08em] uppercase text-on-surface-variant">{t('overview.eyebrow')}</span>
             <h1 className="m-0 font-headline font-extrabold text-[26px] sm:text-[32px] leading-tight tracking-tight text-primary">{t('overview.title')}</h1>
+            <p className="m-0 text-on-surface-variant">{t('overview.leadPlain')}</p>
           </div>
           {formatDate(lastUpdated) && <p className="m-0 text-[13px] text-on-surface-variant">{t('done.updated', { date: formatDate(lastUpdated) })}</p>}
         </header>
@@ -204,6 +210,7 @@ export default function Overview() {
               value={filters.jaar}
               options={['All', ...filterOptions.academic_years]}
               availableOptions={availableFilterOptions ? ['All', ...availableFilterOptions.academic_years] : null}
+              {...filterVariant}
               onChange={(v) => setFilter('jaar', v)}
             />
           </div>
@@ -214,6 +221,7 @@ export default function Overview() {
               value={filters.locatie}
               options={LOCATION_OPTIONS}
               availableOptions={availableFilterOptions ? ['All', ...availableFilterOptions.locations] : null}
+              {...filterVariant}
               onChange={(v) => setFilter('locatie', v)}
             />
           </div>
@@ -224,6 +232,7 @@ export default function Overview() {
               value={filters.opleiding}
               options={['All', ...filterOptions.programmes]}
               availableOptions={availableFilterOptions ? ['All', ...availableFilterOptions.programmes] : null}
+              {...filterVariant}
               onChange={(v) => setFilter('opleiding', v)}
             />
           </div>
@@ -234,6 +243,7 @@ export default function Overview() {
               value={filters.studievorm}
               options={['All', ...filterOptions.study_modes]}
               availableOptions={availableFilterOptions ? ['All', ...availableFilterOptions.study_modes] : null}
+              {...filterVariant}
               onChange={(v) => setFilter('studievorm', v)}
             />
           </div>
@@ -244,6 +254,7 @@ export default function Overview() {
               value={filters.taal}
               options={['All', ...filterOptions.languages]}
               availableOptions={availableFilterOptions ? ['All', ...availableFilterOptions.languages] : null}
+              {...filterVariant}
               onChange={(v) => setFilter('taal', v)}
             />
           </div>
@@ -262,13 +273,13 @@ export default function Overview() {
 
         {/* Theme Landscape */}
         <section>
-          <div className="flex items-end justify-between mb-5">
-            <div>
+          {!noThemes && (
+            <div className="flex items-end justify-between mb-5">
               <h2 className="text-2xl font-bold font-headline text-primary">
                 {t('overview.themesTitle')}
               </h2>
             </div>
-          </div>
+          )}
 
           {loadingThemes ? (
             <div className="bg-surface-container-lowest rounded-2xl p-8 text-center shadow-ambient border border-outline-variant/10">
@@ -370,11 +381,13 @@ export default function Overview() {
         </section>
 
         {/* Sub-theme Word Cloud */}
-        <SubthemeWordCloud
-          themes={displayThemes}
-          empty={hasNoMatchingResponses}
-          missingFilteredData={showNoSubthemeData}
-        />
+        {!noThemes && (
+          <SubthemeWordCloud
+            themes={displayThemes}
+            empty={hasNoMatchingResponses}
+            missingFilteredData={showNoSubthemeData}
+          />
+        )}
       </div>
 
 

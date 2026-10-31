@@ -36,7 +36,7 @@ export default function TierPicker({ step, value, onChange, advancedModelId = nu
           return (
             <label
               key={row.tier}
-              className={`flex flex-col gap-2 rounded-xl cursor-pointer min-w-0 ${isSelected ? 'border-2 border-primary bg-[#f5f9ff] p-[15px]' : 'border border-outline-variant bg-surface-container-lowest p-4 hover:bg-surface-container-low'} has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary`}
+              className={`flex flex-col gap-2 rounded-[12px] cursor-pointer min-w-0 ${isSelected ? 'border-2 border-primary bg-primary-tint p-[15px]' : 'border border-outline-variant bg-surface-container-lowest p-4 hover:bg-surface-container-low'} has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary`}
             >
               <span className="flex items-center gap-2.5 flex-wrap">
                 <input

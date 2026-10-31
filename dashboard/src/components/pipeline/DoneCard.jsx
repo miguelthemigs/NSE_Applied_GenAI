@@ -16,7 +16,7 @@ const WARNING_STATES = new Set(['unverified', 'stale'])
 
 function Tile({ label, value }) {
   return (
-    <div className="border border-outline-variant rounded-xl px-4 py-3.5 flex flex-col gap-0.5 min-w-0">
+    <div className="border border-outline-variant rounded-[12px] px-4 py-3.5 flex flex-col gap-0.5 min-w-0">
       <span className="text-[13px] text-on-surface-variant">{label}</span>
       <span className="font-headline font-extrabold text-[26px] leading-tight text-primary break-words">{value}</span>
     </div>
@@ -90,7 +90,7 @@ function ReviewGate({ summary, listReady, children }) {
   }
 
   return (
-    <section className="border border-warning/30 bg-warning-container rounded-xl p-4 flex flex-col gap-3" aria-labelledby={titleId}>
+    <section className="border border-warning/30 bg-warning-container rounded-[12px] p-4 flex flex-col gap-3" aria-labelledby={titleId}>
       <h3 id={titleId} className="m-0 flex items-center gap-2.5 text-warning font-bold text-[15px]">
         <Icon name="warning" className="text-[20px]" />
         {t('done.review.title', { n: formatNumber(Number(summary.review) || 0) })}
@@ -108,7 +108,7 @@ function ReviewGate({ summary, listReady, children }) {
         <span>{t('done.anonymize.ack')}</span>
       </label>
       {notice && (
-        <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-3 py-2 text-sm font-medium">
+        <p role="alert" className="m-0 rounded-[12px] bg-error-container text-on-error-container px-3 py-2 text-sm font-medium">
           {notice === 'stale' ? t('error.stale_review') : t('done.review.failed')}
         </p>
       )}
@@ -158,7 +158,7 @@ export default function DoneCard({ stepId, stepView, summary, completedAt, onCon
     <>
       <div className={stepBody}>
         {intro}
-        <div data-state={state} className={`flex gap-3.5 items-start rounded-xl p-4 ${warn ? 'bg-warning-container' : 'bg-surface-container-low'}`}>
+        <div data-state={state} className={`flex gap-3.5 items-start rounded-[12px] p-4 ${warn ? 'bg-warning-container' : 'bg-surface-container-low'}`}>
           <StateIcon state={state} />
           <div className="flex flex-col gap-1 min-w-0">
             {warn && <p className="m-0 font-bold text-warning">{t('state.' + state)}</p>}

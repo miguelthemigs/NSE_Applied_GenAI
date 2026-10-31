@@ -61,7 +61,7 @@ export default function ResultsList({ filterDimensions = [], reloadKey = 0 }) {
   return (
     <div className="flex flex-col gap-2.5">
       <h3 className="m-0 text-base font-bold text-on-surface">{t('insights.results')}</h3>
-      <ul className="m-0 p-0 list-none border border-outline-variant rounded-xl overflow-hidden">
+      <ul className="m-0 p-0 list-none border border-outline-variant rounded-[12px] overflow-hidden">
         {ORDER.map((kind) => {
           const row = byKind[kind]
           const off = kind === 'filtered' && (!filtered || row.state === 'off')

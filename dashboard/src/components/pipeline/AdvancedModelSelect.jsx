@@ -22,7 +22,7 @@ export default function AdvancedModelSelect({ step, tier, tiers, advancedModelId
         value={shown}
         disabled={disabled}
         onChange={(e) => onAdvancedChange(e.target.value === current ? null : e.target.value)}
-        className="w-full max-w-md min-h-[44px] rounded-xl border border-outline-variant bg-surface-container-lowest px-3 text-sm text-on-surface font-mono"
+        className="w-full max-w-md min-h-[44px] rounded-[10px] border border-outline-variant bg-surface-container-lowest px-3 text-sm text-on-surface font-mono"
       >
         {tiers.advanced.map((id) => <option key={id} value={id}>{id}</option>)}
       </select>

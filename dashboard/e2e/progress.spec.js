@@ -68,7 +68,7 @@ test.describe('shared progress panel', () => {
     await expect(vectors.getByRole('listitem').filter({ hasText: 'Gegevens lezen' })).toBeVisible()
 
     // the card is white, not the old dark panel
-    const card = status.locator('xpath=ancestor::div[contains(@class,"rounded-2xl")][1]')
+    const card = status.locator('xpath=ancestor::div[contains(@class,"border-outline-variant")][1]')
     await expect(card).toHaveCSS('background-color', 'rgb(255, 255, 255)')
 
     // raw messages stay behind "Details tonen"

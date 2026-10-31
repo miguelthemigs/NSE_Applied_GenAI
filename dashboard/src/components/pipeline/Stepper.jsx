@@ -157,7 +157,7 @@ export default function Stepper({ status, current, onSelect }) {
                   toggleRef.current?.focus()
                 }
               }}
-              className={`min-h-[44px] rounded-xl p-3 text-left flex items-center gap-3 min-[641px]:flex-col min-[641px]:items-start min-[641px]:gap-2 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${selected ? selectedBg : 'hover:bg-surface-container-low'}`}
+              className={`min-h-[44px] rounded-[12px] p-3 text-left flex items-center gap-3 min-[641px]:flex-col min-[641px]:items-start min-[641px]:gap-2 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${selected ? selectedBg : 'hover:bg-surface-container-low'}`}
             >
               <StateCircle step={step} shown={shown} />
               <span className="flex flex-col gap-0.5 min-[641px]:gap-2 min-w-0">

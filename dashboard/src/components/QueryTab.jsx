@@ -195,11 +195,11 @@ export default function QueryTab({ onNavigate }) {
             </h3>
 
             {results.length === 0 ? (
-              <p className="m-0 rounded-xl bg-surface-container-low p-6 text-center text-on-surface-variant">{t('query.none')}</p>
+              <p className="m-0 rounded-[12px] bg-surface-container-low p-6 text-center text-on-surface-variant">{t('query.none')}</p>
             ) : (
               <ol className="m-0 p-0 list-none flex flex-col gap-3">
                 {results.map((result, idx) => (
-                  <li key={idx} className="border border-outline-variant rounded-xl p-4 flex flex-col gap-2 min-w-0">
+                  <li key={idx} className="border border-outline-variant rounded-[12px] p-4 flex flex-col gap-2 min-w-0">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-headline font-extrabold text-primary">#{idx + 1}</span>
                       {result.similarity !== undefined && (

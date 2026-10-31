@@ -147,7 +147,7 @@ export default function ThemeReranker({ onNavigate }) {
         <>
           <div className={stepBody}>
             {statusNotice && (
-              <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
+              <p role="alert" className="m-0 rounded-[12px] bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
             )}
 
             {result?.error && !loading && (
@@ -163,7 +163,12 @@ export default function ThemeReranker({ onNavigate }) {
               </div>
             )}
 
-            {loading && <ProgressPanel stage={currentStage} progress={progress} logs={logs} download={download ?? undefined} />}
+            {loading && (
+              <>
+                <ProgressPanel stage={currentStage} progress={progress} logs={logs} download={download ?? undefined} />
+                <p className="m-0 text-sm text-on-surface-variant">{t('progress.browseNote')}</p>
+              </>
+            )}
 
             {!loading && DONE_CARD_STATES.has(view.state) && (
               <button
@@ -184,7 +189,7 @@ export default function ThemeReranker({ onNavigate }) {
             )}
 
             {skipError && (
-              <div role="alert" className="rounded-xl bg-error-container text-on-error-container px-4 py-3 text-sm">
+              <div role="alert" className="rounded-[12px] bg-error-container text-on-error-container px-4 py-3 text-sm">
                 <p className="m-0 font-semibold">{t('rerank.skipFailed')}</p>
                 <details className="mt-1">
                   <summary className="cursor-pointer">{t('action.details')}</summary>

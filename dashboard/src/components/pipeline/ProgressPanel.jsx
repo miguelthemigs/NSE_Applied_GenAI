@@ -40,7 +40,7 @@ export default function ProgressPanel({ stage, progress = 0, etaSeconds, logs = 
   }
 
   return (
-    <div className="relative overflow-hidden bg-white border border-outline-variant rounded-2xl text-on-surface">
+    <div className="relative overflow-hidden bg-surface-container-lowest border border-outline-variant rounded-[12px] text-on-surface">
       <div className="h-1.5 bg-primary-fixed" aria-hidden="true">
         <div className="h-full bg-primary transition-all duration-200" style={{ width: `${pct}%` }} />
       </div>
@@ -58,9 +58,9 @@ export default function ProgressPanel({ stage, progress = 0, etaSeconds, logs = 
         <StageProgress current={stage} progress={progress} />
 
         {downloadText && (
-          <div className="bg-surface-container-low rounded-xl p-4 flex flex-col gap-2.5">
+          <div className="bg-surface-container-low rounded-[10px] p-4 flex flex-col gap-2.5">
             <div className="flex gap-2.5 items-center">
-              <span className="w-8 h-8 rounded-lg bg-white text-primary flex items-center justify-center shrink-0">
+              <span className="w-8 h-8 rounded-xl bg-white text-primary flex items-center justify-center shrink-0">
                 <Icon name="download" className="text-[18px]" />
               </span>
               <span className="font-semibold">{downloadText}</span>
@@ -70,12 +70,13 @@ export default function ProgressPanel({ stage, progress = 0, etaSeconds, logs = 
                 <div className="h-full bg-primary rounded" style={{ width: `${downloadPct}%` }} />
               </div>
             )}
+            <span className="text-[13px] text-on-surface-variant">{t('download.once')}</span>
           </div>
         )}
 
         <details>
           <summary className="text-primary font-semibold cursor-pointer min-h-[44px] flex items-center">{t('action.details')}</summary>
-          <pre className="m-0 mt-2 bg-surface-container-low text-on-surface-variant rounded-lg p-3 text-xs font-mono whitespace-pre-wrap break-words max-h-56 overflow-y-auto">
+          <pre className="m-0 mt-2 bg-surface-container-low text-on-surface-variant rounded-xl p-3 text-xs font-mono whitespace-pre-wrap break-words max-h-56 overflow-y-auto">
             {logs.map((line, i) => {
               const { kind, text } = typeof line === 'string' ? { kind: 'info', text: line } : line
               return <span key={i} data-kind={kind} className={`block ${kind === 'error' ? 'text-error font-semibold' : ''}`}>{text}</span>

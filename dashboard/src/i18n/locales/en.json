@@ -366,5 +366,10 @@
   "anon.phase.upload": "Upload",
   "anon.phase.columns": "Choose columns",
   "anon.phase.review": "Check results",
-  "anon.phase.label": "Parts of this step"
+  "anon.phase.label": "Parts of this step",
+  "anon.advanced": "Advanced · thoroughness and word filter",
+  "vec.columns.count": "{n} columns",
+  "download.once": "This happens only once. After that the model stays on this computer.",
+  "progress.browseNote": "You can look at the other steps while this runs. You can start one once this step has finished.",
+  "overview.leadPlain": "Students' open answers, grouped into themes and summarised by AI."
 }

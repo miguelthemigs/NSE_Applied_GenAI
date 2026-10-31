@@ -37,9 +37,9 @@ function MissedList({ report, review, listState, onRetry }) {
   }
   if (listState !== 'ready') {
     return (
-      <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl bg-error-container text-on-error-container px-3 py-2 text-sm">
+      <div role="alert" className="flex flex-wrap items-center gap-3 rounded-[12px] bg-error-container text-on-error-container px-3 py-2 text-sm">
         <span className="grow font-medium">{t('done.review.loadFailed')}</span>
-        <button type="button" onClick={onRetry} className="min-h-[44px] px-3 py-2 rounded-xl bg-surface-container-lowest text-primary font-semibold border border-outline-variant hover:bg-surface-container-low">
+        <button type="button" onClick={onRetry} className="min-h-[44px] px-3 py-2 rounded-[10px] bg-surface-container-lowest text-primary font-semibold border border-outline-variant hover:bg-surface-container-low">
           {t('action.retry')}
         </button>
       </div>
@@ -52,7 +52,7 @@ function MissedList({ report, review, listState, onRetry }) {
       {keys.map((k) => {
         const samples = report.missed_samples?.[k] ?? [];
         return (
-          <li key={k} className="bg-surface-container-lowest rounded-xl px-3.5 py-3 flex flex-col gap-1.5">
+          <li key={k} className="bg-surface-container-lowest rounded-[10px] px-3.5 py-3 flex flex-col gap-1.5">
             <span className="text-xs font-semibold text-on-surface-variant">
               {t('anon.mask.' + k)} · {t('anon.count.missed', { n: formatNumber(report.missed_counts[k]) })}
             </span>
@@ -78,7 +78,7 @@ function RemovedDetails({ report }) {
   const keys = MASK_KEYS.filter((k) => (report?.tag_counts?.[k] ?? 0) > 0);
   if (keys.length === 0) return null;
   return (
-    <details className="border border-outline-variant rounded-xl">
+    <details className="border border-outline-variant rounded-[12px]">
       <summary className="px-4 py-3.5 font-semibold text-primary cursor-pointer">{t('done.removed.title')}</summary>
       <ul className="m-0 px-4 pb-4 list-none flex flex-col gap-3">
         {keys.map((k) => {
@@ -115,7 +115,7 @@ function Phases({ current }) {
         const state = n < current ? 'done' : n === current ? 'current' : 'todo';
         return (
           <li key={phase} className="flex items-center gap-2" aria-current={state === 'current' ? 'step' : undefined}>
-            {i > 0 && <span aria-hidden="true" className="text-outline-variant">—</span>}
+            {i > 0 && <span aria-hidden="true" className="max-sm:hidden text-outline-variant">—</span>}
             <span className={`flex items-center gap-1.5 ${state === 'done' ? 'text-primary font-semibold' : state === 'current' ? 'text-on-surface font-bold' : 'text-outline'}`}>
               {state === 'done' ? (
                 <Icon name="check" className="text-[18px]" />
@@ -431,30 +431,144 @@ export default function AnonymizerTab({ onNavigate }) {
   // view.state (not the raw state) so no Done card shows while step 1 runs.
   const showDone = DONE_CARD_STATES.has(view.state) && !loading && !rerunning;
 
+  // Thoroughness and the word filter. Shown under the Done card and while setting up a run.
+  const advanced = (
+    <details className={advancedDetails}>
+      <summary className={advancedSummary}>
+        <Icon name="tune" className="text-[18px]" />
+        {t('anon.advanced')}
+      </summary>
+      <div className={advancedBody}>
+        <fieldset className="m-0 p-0 border-0 flex flex-col gap-2">
+          <legend className="p-0 mb-2 font-semibold text-on-surface">{t('anon.layers.title')}</legend>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {LAYER_PRESETS.map((preset) => {
+              const active = preset.layers.length === selectedLayers.length
+                && preset.layers.every((layer) => selectedLayers.includes(layer));
+              return (
+                <label
+                  key={preset.id}
+                  className={`flex flex-col gap-1 rounded-[12px] cursor-pointer min-w-0 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary ${active ? 'border-2 border-primary bg-primary-tint p-[11px]' : 'border border-outline-variant bg-surface-container-lowest p-3 hover:bg-surface-container-low'}`}
+                >
+                  <input
+                    type="radio"
+                    name="anon-preset"
+                    value={preset.id}
+                    checked={active}
+                    onChange={() => setSelectedLayers(preset.layers)}
+                    className="sr-only"
+                  />
+                  <span className={`text-sm font-bold ${active ? 'text-primary' : 'text-on-surface'}`}>{t('anon.preset.' + preset.id)}</span>
+                  <span className="text-[13px] leading-snug text-on-surface-variant">{t('anon.preset.' + preset.id + '.lead')}</span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <fieldset className="m-0 p-0 border-0 flex flex-col gap-2">
+          <legend className="p-0 mb-2 font-semibold text-on-surface">{t('anon.checks.title')}</legend>
+          {LAYER_OPTIONS.map((id) => (
+            <label key={id} className="flex items-start gap-3 p-3 rounded-[12px] border border-outline-variant bg-surface-container-lowest cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectedLayers.includes(id)}
+                onChange={() => toggleLayer(id)}
+                className={checkbox}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-on-surface font-mono break-all">{id}</span>
+                <span className="block text-[13px] text-on-surface-variant mt-0.5 leading-snug">{t('anon.layer.' + id)}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+
+        <div className="flex flex-col gap-3 pt-4 border-t border-surface-container-highest">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="m-0 flex items-center gap-2 text-sm font-semibold text-on-surface">
+              <Icon name="block" className="text-[20px] text-on-surface-variant" />
+              {t('anon.blocklist.title')}
+            </h3>
+            {blocklist.length > 0 && (
+              <span className="text-xs font-semibold text-primary bg-primary-fixed px-2.5 py-1 rounded-full">
+                {t('anon.blocklist.count', { n: blocklist.length })}
+              </span>
+            )}
+          </div>
+          <p className="m-0 text-sm text-on-surface-variant">{t('anon.blocklist.lead')}</p>
+          <div className="flex flex-wrap gap-2">
+            <input
+              type="text"
+              value={blocklistInput}
+              onChange={(e) => setBlocklistInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addBlocklistWord()}
+              placeholder={t('anon.blocklist.placeholder')}
+              aria-label={t('anon.blocklist.title')}
+              className={`${textInput} flex-[1_1_200px] w-auto`}
+            />
+            <button
+              type="button"
+              onClick={addBlocklistWord}
+              disabled={!blocklistInput.trim()}
+              className={secondaryButton}
+            >
+              <Icon name="add" className="text-[18px]" />
+              {t('anon.blocklist.add')}
+            </button>
+          </div>
+          {blocklist.length > 0 ? (
+            <ul className="m-0 p-0 list-none flex flex-wrap gap-2">
+              {blocklist.map((word) => (
+                <li key={word} className="inline-flex items-center gap-1 pl-3 pr-1 py-1 bg-primary-fixed text-primary text-sm font-mono rounded-[12px] break-all">
+                  {word}
+                  <button
+                    type="button"
+                    onClick={() => removeBlocklistWord(word)}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-primary/10"
+                    title={t('anon.blocklist.remove', { word })}
+                    aria-label={t('anon.blocklist.remove', { word })}
+                  >
+                    <Icon name="close" className="text-[16px]" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="m-0 text-sm text-outline">{t('anon.blocklist.empty')}</p>
+          )}
+        </div>
+      </div>
+    </details>
+  );
+
   return (
     <>
       <StepHeader stepId="anonymize" />
 
       {showDone ? (
-        <DoneCard
-          stepId="anonymize"
-          stepView={view}
-          summary={anon?.summary}
-          completedAt={anon?.completed_at}
-          onContinue={() => onNavigate?.('vectors')}
-          onRunAgain={runAgain}
-          onRunCheck={runCheck}
-          listReady={listState === 'ready'}
-          intro={<Phases current={3} />}
-          details={<RemovedDetails report={currentReport} />}
-        >
-          <MissedList report={currentReport} review={anon?.summary?.review} listState={listState} onRetry={retryReport} />
-        </DoneCard>
+        <>
+          <DoneCard
+            stepId="anonymize"
+            stepView={view}
+            summary={anon?.summary}
+            completedAt={anon?.completed_at}
+            onContinue={() => onNavigate?.('vectors')}
+            onRunAgain={runAgain}
+            onRunCheck={runCheck}
+            listReady={listState === 'ready'}
+            intro={<Phases current={3} />}
+            details={<RemovedDetails report={currentReport} />}
+          >
+            <MissedList report={currentReport} review={anon?.summary?.review} listState={listState} onRetry={retryReport} />
+          </DoneCard>
+          {advanced}
+        </>
       ) : (
         <>
           <div className={stepBody}>
             {statusNotice && (
-              <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
+              <p role="alert" className="m-0 rounded-[12px] bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
             )}
 
             <Phases current={step} />
@@ -463,7 +577,7 @@ export default function AnonymizerTab({ onNavigate }) {
             {step === 1 && (
               <>
                 {checkpoint && (
-                  <div className="flex flex-wrap items-start justify-between gap-4 rounded-xl border border-warning/30 bg-warning-container p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-4 rounded-[12px] border border-warning/30 bg-warning-container p-4">
                     <div className="flex items-start gap-3 min-w-0">
                       <Icon name="schedule" className="text-[20px] text-warning shrink-0" />
                       <div className="min-w-0">
@@ -493,9 +607,9 @@ export default function AnonymizerTab({ onNavigate }) {
                 )}
 
                 {lastReport && existingAnonymized && (
-                  <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-surface-container-low p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4 rounded-[12px] bg-surface-container-low p-4">
                     <div className="flex items-center gap-3 min-w-0">
-                      <span className="w-9 h-9 rounded-xl bg-surface-container-lowest text-primary flex items-center justify-center shrink-0">
+                      <span className="w-9 h-9 rounded-[12px] bg-surface-container-lowest text-primary flex items-center justify-center shrink-0">
                         <Icon name="description" className="text-[20px]" />
                       </span>
                       <div className="min-w-0">
@@ -509,7 +623,7 @@ export default function AnonymizerTab({ onNavigate }) {
                   </div>
                 )}
 
-                <div className="relative border-2 border-dashed border-outline-variant bg-surface-container-low rounded-xl px-4 py-10 sm:p-12 text-center hover:border-primary has-[:focus-visible]:border-primary transition-colors duration-150">
+                <div className="relative border-2 border-dashed border-outline-variant bg-surface-container-low rounded-[12px] px-4 py-10 sm:p-12 text-center hover:border-primary has-[:focus-visible]:border-primary transition-colors duration-150">
                   <input
                     type="file"
                     accept=".csv,.xlsx,.xls"
@@ -534,7 +648,7 @@ export default function AnonymizerTab({ onNavigate }) {
                 </div>
 
                 {existingAnonymized && (
-                  <div className="flex flex-col gap-3 rounded-xl border border-outline-variant p-4">
+                  <div className="flex flex-col gap-3 rounded-[12px] border border-outline-variant p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-3 text-on-surface">
                         <Icon name="check_circle" className="text-[20px] text-primary shrink-0" />
@@ -575,11 +689,11 @@ export default function AnonymizerTab({ onNavigate }) {
             {/* --- STEP 2 --- */}
             {step === 2 && (
               <>
-                <div className="flex flex-col gap-3 rounded-xl bg-surface-container-low p-4">
+                <div className="flex flex-col gap-3 rounded-[12px] bg-surface-container-low p-4">
                   <p className="m-0 text-xs font-bold uppercase tracking-[0.06em] text-on-surface-variant">{t('anon.removes.title')}</p>
                   <ul className="m-0 p-0 list-none flex flex-wrap gap-2">
                     {MASKING_INFO.map((item) => (
-                      <li key={item.tag} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-container-lowest border border-outline-variant">
+                      <li key={item.tag} className="flex items-center gap-2 px-3 py-2 rounded-[12px] bg-surface-container-lowest border border-outline-variant">
                         <span className="font-mono text-xs font-extrabold text-primary">{item.tag}</span>
                         <span className="text-xs text-on-surface-variant">{t('anon.mask.' + item.key)}</span>
                       </li>
@@ -600,7 +714,7 @@ export default function AnonymizerTab({ onNavigate }) {
                       return (
                         <label
                           key={col}
-                          className={`flex items-center gap-3 min-h-[44px] px-3 py-2 rounded-xl border cursor-pointer min-w-0 ${isSelected ? 'border-primary bg-[#f5f9ff]' : 'border-outline-variant hover:bg-surface-container-low'}`}
+                          className={`flex items-center gap-3 min-h-[44px] px-3 py-2 rounded-[12px] border cursor-pointer min-w-0 ${isSelected ? 'border-primary bg-primary-tint' : 'border-outline-variant hover:bg-surface-container-low'}`}
                         >
                           <input type="checkbox" checked={isSelected} onChange={() => toggleColumn(col)} className={checkbox} />
                           <span className="text-sm font-medium text-on-surface truncate" title={col}>{col}</span>
@@ -610,67 +724,12 @@ export default function AnonymizerTab({ onNavigate }) {
                   </div>
                 </fieldset>
 
-                <section className={`${insetCard} flex flex-col gap-3`}>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="m-0 flex items-center gap-2 text-base font-bold text-on-surface">
-                      <Icon name="block" className="text-[20px] text-on-surface-variant" />
-                      {t('anon.blocklist.title')}
-                    </h3>
-                    {blocklist.length > 0 && (
-                      <span className="text-xs font-semibold text-primary bg-primary-fixed px-2.5 py-1 rounded-full">
-                        {t('anon.blocklist.count', { n: blocklist.length })}
-                      </span>
-                    )}
-                  </div>
-                  <p className="m-0 text-sm text-on-surface-variant">{t('anon.blocklist.lead')}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <input
-                      type="text"
-                      value={blocklistInput}
-                      onChange={(e) => setBlocklistInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && addBlocklistWord()}
-                      placeholder={t('anon.blocklist.placeholder')}
-                      aria-label={t('anon.blocklist.title')}
-                      className={`${textInput} flex-[1_1_200px] w-auto`}
-                    />
-                    <button
-                      type="button"
-                      onClick={addBlocklistWord}
-                      disabled={!blocklistInput.trim()}
-                      className={secondaryButton}
-                    >
-                      <Icon name="add" className="text-[18px]" />
-                      {t('anon.blocklist.add')}
-                    </button>
-                  </div>
-                  {blocklist.length > 0 ? (
-                    <ul className="m-0 p-0 list-none flex flex-wrap gap-2">
-                      {blocklist.map((word) => (
-                        <li key={word} className="inline-flex items-center gap-1 pl-3 pr-1 py-1 bg-primary-fixed text-primary text-sm font-mono rounded-xl break-all">
-                          {word}
-                          <button
-                            type="button"
-                            onClick={() => removeBlocklistWord(word)}
-                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-primary/10"
-                            title={t('anon.blocklist.remove', { word })}
-                            aria-label={t('anon.blocklist.remove', { word })}
-                          >
-                            <Icon name="close" className="text-[16px]" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="m-0 text-sm text-outline">{t('anon.blocklist.empty')}</p>
-                  )}
-                </section>
-
                 {preview.length > 0 && (
-                  <div className="flex flex-col gap-3 rounded-xl bg-surface-container-low p-4 min-w-0">
+                  <div className="flex flex-col gap-3 rounded-[12px] bg-surface-container-low p-4 min-w-0">
                     <p className="m-0 text-xs font-bold uppercase tracking-[0.06em] text-on-surface-variant">{t('anon.preview.title')}</p>
                     <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
                       {selectedColumns.slice(0, 4).map((col) => (
-                        <div key={col} className="min-w-[200px] max-w-[250px] p-3 bg-surface-container-lowest rounded-xl border border-outline-variant shrink-0">
+                        <div key={col} className="min-w-[200px] max-w-[250px] p-3 bg-surface-container-lowest rounded-[12px] border border-outline-variant shrink-0">
                           <p className="m-0 mb-1 text-xs font-bold text-primary truncate">{col}</p>
                           <p className="m-0 text-sm text-on-surface line-clamp-3">{String(preview[0][col] || '')}</p>
                         </div>
@@ -690,14 +749,15 @@ export default function AnonymizerTab({ onNavigate }) {
             {step === 3 && loading && (
               <div className="flex flex-col gap-3">
                 <ProgressPanel stage={currentStage} progress={progress} logs={logs} />
+                <p className="m-0 text-sm text-on-surface-variant">{t('progress.browseNote')}</p>
                 {currentPreview && (
-                  <div className="p-4 bg-surface-container-low rounded-xl">
+                  <div className="p-4 bg-surface-container-low rounded-[12px]">
                     <p className="m-0 mb-1 text-xs font-bold uppercase tracking-[0.06em] text-on-surface-variant">{t('anon.live')}</p>
                     <p className="m-0 text-sm font-mono leading-relaxed line-clamp-2 text-on-surface-variant">{currentPreview}</p>
                   </div>
                 )}
                 {lastCheckpointRow && progress < 100 && (
-                  <div className="flex items-center gap-2 text-sm text-success bg-success-container rounded-xl px-3 py-2">
+                  <div className="flex items-center gap-2 text-sm text-success bg-success-container rounded-[12px] px-3 py-2">
                     <Icon name="check_circle" className="text-[18px]" />
                     {t('anon.checkpointSaved')}
                   </div>
@@ -773,60 +833,7 @@ export default function AnonymizerTab({ onNavigate }) {
             </div>
           )}
 
-          {step === 2 && (
-            <details className={advancedDetails}>
-              <summary className={advancedSummary}>
-                <Icon name="tune" className="text-[18px]" />
-                {t('action.advanced')}
-              </summary>
-              <div className={advancedBody}>
-                <fieldset className="m-0 p-0 border-0 flex flex-col gap-2">
-                  <legend className="p-0 mb-2 font-semibold text-on-surface">{t('anon.layers.title')}</legend>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {LAYER_PRESETS.map((preset) => {
-                      const active = preset.layers.length === selectedLayers.length
-                        && preset.layers.every((layer) => selectedLayers.includes(layer));
-                      return (
-                        <label
-                          key={preset.id}
-                          className={`flex flex-col gap-1 rounded-xl cursor-pointer min-w-0 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary ${active ? 'border-2 border-primary bg-[#f5f9ff] p-[11px]' : 'border border-outline-variant bg-surface-container-lowest p-3 hover:bg-surface-container-low'}`}
-                        >
-                          <input
-                            type="radio"
-                            name="anon-preset"
-                            value={preset.id}
-                            checked={active}
-                            onChange={() => setSelectedLayers(preset.layers)}
-                            className="sr-only"
-                          />
-                          <span className={`text-sm font-bold ${active ? 'text-primary' : 'text-on-surface'}`}>{t('anon.preset.' + preset.id)}</span>
-                          <span className="text-[13px] leading-snug text-on-surface-variant">{t('anon.preset.' + preset.id + '.lead')}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </fieldset>
-
-                <fieldset className="m-0 p-0 border-0 flex flex-col gap-2">
-                  <legend className="p-0 mb-2 font-semibold text-on-surface">{t('anon.checks.title')}</legend>
-                  {LAYER_OPTIONS.map((id) => (
-                    <label key={id} className="flex items-start gap-3 p-3 rounded-xl border border-outline-variant bg-surface-container-lowest cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedLayers.includes(id)}
-                        onChange={() => toggleLayer(id)}
-                        className={checkbox}
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-sm font-bold text-on-surface font-mono break-all">{id}</span>
-                        <span className="block text-[13px] text-on-surface-variant mt-0.5 leading-snug">{t('anon.layer.' + id)}</span>
-                      </span>
-                    </label>
-                  ))}
-                </fieldset>
-              </div>
-            </details>
-          )}
+          {(step === 1 || step === 2) && !loading && advanced}
         </>
       )}
     </>

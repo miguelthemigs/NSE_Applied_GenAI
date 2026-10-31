@@ -1,3 +1,5 @@
+// Radii follow the mockups: panels 16px (rounded-2xl), inner boxes 12px, buttons and inputs 10px,
+// small tiles 8px (rounded-xl). The global `xl` token stays 8px.
 // Shared classes for the step panels (mockups Main, Step2Running, Step3, Step4, Mobile).
 // A panel is: StepHeader, a body, an optional footer bar and an optional Advanced
 // disclosure at the very bottom, all edge to edge inside the white panel card.
@@ -17,19 +19,19 @@ export const advancedSummary =
 export const advancedBody = 'px-4 sm:px-6 pb-5 pt-1 flex flex-col gap-5 text-sm text-on-surface'
 
 export const primaryButton =
-  'inline-flex items-center justify-center gap-2 min-h-[44px] px-[18px] py-2.5 rounded-xl bg-primary text-on-primary text-sm font-semibold no-underline hover:bg-primary-container disabled:bg-surface-container-highest disabled:text-on-surface-variant disabled:cursor-not-allowed'
+  'inline-flex items-center justify-center gap-2 min-h-[44px] px-[18px] py-2.5 rounded-[10px] bg-primary text-on-primary text-sm font-semibold no-underline hover:bg-primary-container disabled:bg-surface-container-highest disabled:text-on-surface-variant disabled:cursor-not-allowed'
 export const secondaryButton =
-  'inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-primary text-sm font-semibold no-underline hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed'
+  'inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-2.5 rounded-[10px] border border-outline-variant bg-surface-container-lowest text-primary text-sm font-semibold no-underline hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed'
 export const linkButton =
   'inline-flex items-center gap-2 min-h-[44px] px-1 py-2.5 text-sm font-semibold text-primary underline underline-offset-[3px] hover:text-primary-container disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed'
 
 /** A bordered inset box inside a step body (radio cards, settings groups). */
-export const insetCard = 'border border-outline-variant rounded-xl p-4 sm:p-5 min-w-0'
+export const insetCard = 'border border-outline-variant rounded-[12px] p-4 sm:p-5 min-w-0'
 /** A grey note box (hints, optional-step explanation). */
-export const noteBox = 'flex gap-3 items-start bg-surface-container-low rounded-xl px-4 py-3.5 text-sm text-on-surface-variant'
-export const errorBox = 'flex items-start gap-3 rounded-xl bg-error-container text-on-error-container p-4'
+export const noteBox = 'flex gap-3 items-start bg-surface-container-low rounded-[12px] px-4 py-3.5 text-sm text-on-surface-variant'
+export const errorBox = 'flex items-start gap-3 rounded-[12px] bg-error-container text-on-error-container p-4'
 
 export const fieldLabel = 'text-sm font-semibold text-on-surface'
 export const textInput =
-  'w-full min-h-[44px] rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:bg-surface-container-low disabled:text-outline'
+  'w-full min-h-[44px] rounded-[10px] border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:bg-surface-container-low disabled:text-outline'
 export const checkbox = 'w-5 h-5 m-0 mt-0.5 shrink-0 accent-primary'

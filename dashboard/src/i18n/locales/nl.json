@@ -366,5 +366,10 @@
   "anon.phase.upload": "Uploaden",
   "anon.phase.columns": "Kolommen kiezen",
   "anon.phase.review": "Resultaten controleren",
-  "anon.phase.label": "Onderdelen van deze stap"
+  "anon.phase.label": "Onderdelen van deze stap",
+  "anon.advanced": "Geavanceerd · grondigheid en woordenfilter",
+  "vec.columns.count": "{n} kolommen",
+  "download.once": "Dit gebeurt maar één keer. Daarna staat het model op deze computer.",
+  "progress.browseNote": "Je kunt de andere stappen bekijken terwijl dit loopt. Starten kan pas als deze stap klaar is.",
+  "overview.leadPlain": "Open antwoorden van studenten, ingedeeld in thema's en samengevat door AI."
 }

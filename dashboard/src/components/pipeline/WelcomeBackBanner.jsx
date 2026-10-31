@@ -35,7 +35,7 @@ export default function WelcomeBackBanner({ lastUpdated }) {
 
   if (!visible || !date) return null
   return (
-    <div role="status" className="flex items-center gap-3 rounded-xl bg-primary-fixed text-primary px-4 py-3">
+    <div role="status" className="flex items-center gap-3 rounded-[12px] bg-primary-fixed text-primary px-4 py-3">
       <Icon name="info" className="text-[20px] shrink-0" />
       <span className="grow font-medium">{t('banner.welcomeBack', { date })}</span>
       <button

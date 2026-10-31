@@ -259,12 +259,12 @@ export default function WriteSummaries({ onNavigate }) {
             )}
 
             {statusNotice && (
-              <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
+              <p role="alert" className="m-0 rounded-[12px] bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
             )}
 
             {/* A successful run that leaves step 4 partial still gets a confirmation. */}
             {succeeded && showSettings && (
-              <div role="status" className="flex items-start gap-3 p-4 rounded-xl bg-success-container text-on-surface">
+              <div role="status" className="flex items-start gap-3 p-4 rounded-[12px] bg-success-container text-on-surface">
                 <Icon name="check_circle" filled className="text-[22px] text-success shrink-0" />
                 <div className="min-w-0">
                   <p className="m-0 font-semibold">{t('state.done')}</p>
@@ -276,6 +276,7 @@ export default function WriteSummaries({ onNavigate }) {
             {phase !== 'idle' && (
               <div className="flex flex-col gap-3">
                 <ProgressPanel stage={stage} progress={progress} logs={logs} download={download ?? undefined} />
+                {phase === 'running' && <p className="m-0 text-sm text-on-surface-variant">{t('progress.browseNote')}</p>}
                 {phase === 'failed' && (
                   <button type="button" onClick={() => { setPhase('idle'); setRunError(null) }} className={`${secondaryButton} self-start`}>
                     <Icon name="arrow_back" className="text-[18px]" />
@@ -304,7 +305,7 @@ export default function WriteSummaries({ onNavigate }) {
                   onAdvancedChange={(id) => setAdvancedModel(id)}
                 />
 
-                <label className="flex gap-3 items-start border border-outline-variant rounded-xl px-4 py-3.5 cursor-pointer has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary">
+                <label className="flex gap-3 items-start border border-outline-variant rounded-[12px] px-4 py-3.5 cursor-pointer has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary">
                   <input
                     type="checkbox"
                     checked={combosOn}

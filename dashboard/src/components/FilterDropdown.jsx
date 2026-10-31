@@ -2,7 +2,12 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon.jsx'
 
-export default function FilterDropdown({ icon, label, value, options, availableOptions, onChange }) {
+/**
+ * A filter of the Overview bar. variant 'dropdown' (default) is the searchable menu;
+ * 'select' is a plain labelled native select (mockup Overview), used while there is
+ * nothing to filter, together with `disabled`.
+ */
+export default function FilterDropdown({ icon, label, value, options, availableOptions, onChange, variant = 'dropdown', disabled = false }) {
   const { t } = useI18n()
   const show = (opt) => (opt === 'All' ? t('common.all') : opt)
   const [open, setOpen] = useState(false)
@@ -47,6 +52,24 @@ export default function FilterDropdown({ icon, label, value, options, availableO
   }
 
   const isActive = open
+
+  if (variant === 'select') {
+    return (
+      <label className="flex flex-col gap-1 min-w-0 text-[13px] font-semibold text-on-surface-variant">
+        {label}
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full min-h-[44px] rounded-[10px] border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm font-medium text-on-surface disabled:bg-surface-container-low disabled:text-outline"
+        >
+          {options.map((opt) => (
+            <option key={opt} value={opt} disabled={!isAvailable(opt)}>{show(opt)}</option>
+          ))}
+        </select>
+      </label>
+    )
+  }
 
   return (
     <div ref={ref} className="relative">

@@ -114,8 +114,43 @@ async function oldPaletteBackgrounds(page) {
   })
 }
 
+/** Each visible step panel: its own content fits (the panel's overflow-hidden would otherwise hide it). */
+async function panelOverflow(page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('[id^="step-panel-"]:not([hidden])')]
+      .filter((el) => el.scrollWidth > el.clientWidth)
+      .map((el) => `${el.id}: ${el.scrollWidth} > ${el.clientWidth}`),
+  )
+}
+
+/** No sideways page scroll, no in-panel overflow and (unless `palette: false`) no old-palette backgrounds. */
+async function checkLayout(page, { palette = true } = {}) {
+  await noHorizontalScroll(page)
+  expect(await panelOverflow(page)).toEqual([])
+  if (palette) expect(await oldPaletteBackgrounds(page)).toEqual([])
+}
+
+const THEME_NAMES = ['Content and Organisation', 'Professional Practice', 'Teachers', 'Support / Mentoring', 'Examination & Assessment', 'Engagement & Contact', 'Special Circumstances']
+const OVERVIEW_OK = {
+  status: 'success',
+  total_filtered_documents: 700,
+  themes: Object.fromEntries(THEME_NAMES.map((name, i) => [name, {
+    frequency: 140 - i * 15,
+    vector_relevant_count: 140 - i * 15,
+    summary: 'Fixture summary',
+    subthemes: ['Planning', 'Roosters'],
+    subtheme_mentions: [{ subtheme: 'Planning', mentions: 5, percentage: 60 }, { subtheme: 'Roosters', mentions: 3, percentage: 40 }],
+    quotes: [],
+    student_suggestions: [],
+  }])),
+}
+const FILTER_OPTIONS = {
+  status: 'success',
+  options: { academic_years: ['2023-2024', '2024-2025'], locations: ['Amsterdam'], programmes: ['Software Engineering', 'Cyber Security'], study_modes: ['Voltijd'], cohorts: [], sectors: [], languages: ['Nederlands'] },
+}
+
 test.describe('visual: one colour, light style, no horizontal scroll', () => {
-  test('overview and compare pages do not scroll sideways', async ({ page, mockApi }) => {
+  test('overview empty state does not scroll sideways', async ({ page, mockApi }) => {
     await mockApi({
       ...PANEL_ROUTES,
       '/api/pipeline/status': statusFixture('all-done'),
@@ -123,11 +158,58 @@ test.describe('visual: one colour, light style, no horizontal scroll', () => {
     })
     await page.goto('/')
     await expect(page.getByText('Er zijn nog geen samenvattingen')).toBeVisible()
-    await noHorizontalScroll(page)
+    await checkLayout(page)
+  })
+
+  test('compare page with real content does not scroll sideways', async ({ page, mockApi }) => {
+    await mockApi({ ...PANEL_ROUTES, '/api/pipeline/status': statusFixture('all-done') })
+    await page.route('**/health', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }))
+    await page.route('**/api/v1/compare/**', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        { group: 'Software Engineering', top_themes: [['Teachers', 5], ['Professional Practice', 3]], total_responses: 8 },
+        { group: 'Cyber Security', top_themes: [], total_responses: 1 },
+      ]),
+    }))
     await page.goto('/vergelijken')
-    await expect(page.locator('main')).toBeVisible()
+    // Past the lazy-load fallback: the real page and its live data are on screen.
+    await expect(page.getByRole('heading', { level: 1, name: 'Vergelijking' })).toBeVisible()
+    await expect(page.getByText('Docenten (5)')).toBeVisible()
     await noHorizontalScroll(page)
     await shot(page, 'vergelijken')
+  })
+
+  test('overview with themes at this width: hero, cards and filters fit', async ({ page, mockApi }) => {
+    await mockApi({ ...PANEL_ROUTES, '/api/pipeline/status': statusFixture('all-done'), '/api/themes-overview': OVERVIEW_OK, '/api/filter-options': FILTER_OPTIONS })
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'Docenten', exact: true })).toBeVisible()
+    await expect(page.getByText('Studiejaar').first()).toBeVisible()
+    await page.waitForFunction(() => [...document.querySelectorAll('main > *')].every((el) => getComputedStyle(el).opacity === '1'))
+    // The HeroBanner's navy gradient is the Overview's own look (not a pipeline file).
+    await checkLayout(page, { palette: false })
+    await shot(page, 'overview-ok')
+  })
+
+  test('step 5 with results', async ({ page, mockApi }) => {
+    await mockApi({
+      ...PANEL_ROUTES,
+      '/api/pipeline/status': statusFixture('all-done'),
+      '/api/query-vectors': {
+        status: 'success',
+        results: [
+          { document: 'De roosters worden vaak pas laat bekend gemaakt, waardoor plannen lastig is.', similarity: 0.82, metadata: { programme: 'Software Engineering', academic_year: '2024-2025' } },
+          { document: 'Ik zou graag eerder weten wanneer de toetsen zijn.', similarity: 0.74, metadata: { programme: 'Cyber Security' } },
+        ],
+      },
+    })
+    await page.goto('/pipeline-demo?step=query')
+    const panel = page.locator('#step-panel-query')
+    await panel.getByRole('textbox', { name: 'Je vraag' }).fill('Wat vinden studenten van de roosters?')
+    await panel.getByRole('button', { name: 'Zoeken' }).click()
+    await expect(panel.getByText('Overeenkomst 82%')).toBeVisible()
+    await checkLayout(page)
+    await shot(page, 'step5-results')
   })
 
   for (const step of STEPS) {
@@ -136,8 +218,7 @@ test.describe('visual: one colour, light style, no horizontal scroll', () => {
       await page.goto(`/pipeline-demo?step=${step}`)
       const panel = page.locator(`#step-panel-${step}`)
       await expect(panel.getByRole('heading', { level: 2 })).toBeVisible()
-      await noHorizontalScroll(page)
-      expect(await oldPaletteBackgrounds(page)).toEqual([])
+      await checkLayout(page)
       await expect(page.locator('main svg')).toHaveCount(0)
       const icons = page.locator('main .material-symbols-outlined')
       expect(await icons.count()).toBeGreaterThan(0)
@@ -152,7 +233,7 @@ test.describe('visual: mockup boards', () => {
     await mockApi({ ...PANEL_ROUTES, '/api/anonymize-report': REPORT, '/api/pipeline/status': statusFixture('anon-needs-review') })
     await page.goto('/pipeline-demo?step=anonymize')
     await expect(page.getByText('[MOGELIJKE NAAM]')).toBeVisible()
-    await noHorizontalScroll(page)
+    await checkLayout(page)
     await shot(page, 'board-main')
   })
 
@@ -182,7 +263,7 @@ test.describe('visual: mockup boards', () => {
       params: { bytes_done: 0.4e9, bytes_total: 1.2e9, tier: 'balanced' },
     })
     await expect(panel.getByRole('progressbar')).toBeVisible()
-    await noHorizontalScroll(page)
+    await checkLayout(page)
     await shot(page, 'board-step2-running')
   })
 
@@ -196,21 +277,23 @@ test.describe('visual: mockup boards', () => {
     await page.goto('/pipeline-demo?step=anonymize')
     const panel = page.locator('#step-panel-anonymize')
     await expect(panel.getByText('Sleep je bestand hierheen of klik om te kiezen')).toBeVisible()
-    await noHorizontalScroll(page)
-    expect(await oldPaletteBackgrounds(page)).toEqual([])
+    await checkLayout(page)
     await shot(page, 'step1-upload')
     await panel.locator('input[type=file]').setInputFiles({ name: 'enquete.csv', mimeType: 'text/csv', buffer: Buffer.from('a,b\n1,2\n') })
     await expect(panel.getByRole('checkbox', { name: 'Wat vond je goed?' })).toBeChecked()
-    await noHorizontalScroll(page)
-    expect(await oldPaletteBackgrounds(page)).toEqual([])
+    await checkLayout(page)
     await shot(page, 'step1-columns')
+    await panel.locator('summary', { hasText: 'Geavanceerd' }).click()
+    await expect(panel.getByRole('textbox', { name: 'Woorden die altijd weg moeten' })).toBeVisible()
+    await checkLayout(page)
+    await shot(page, 'step1-advanced')
   })
 
   test('Step3: check themes, not done yet', async ({ page, mockApi }) => {
     await mockApi({ ...PANEL_ROUTES, '/api/pipeline/status': rerankOpen() })
     await page.goto('/pipeline-demo?step=rerank')
     await expect(page.locator('#step-panel-rerank').getByRole('heading', { level: 2 })).toBeVisible()
-    await noHorizontalScroll(page)
+    await checkLayout(page)
     await shot(page, 'board-step3')
   })
 
@@ -220,7 +303,7 @@ test.describe('visual: mockup boards', () => {
     const panel = page.locator('#step-panel-insights')
     await expect(panel.getByRole('heading', { name: 'Resultaten' })).toBeVisible()
     await expect(panel.locator('summary', { hasText: 'Geavanceerd' })).toHaveCount(1)
-    await noHorizontalScroll(page)
+    await checkLayout(page)
     await shot(page, 'board-step4')
   })
 
@@ -242,7 +325,7 @@ test.describe('visual: mockup boards', () => {
       await page.goto('/')
       await expect(page.locator('main')).toBeVisible()
       await expect(page.getByText(/Er zijn nog geen samenvattingen|nog voorbereid|niet bereikbaar/).first()).toBeVisible()
-      await noHorizontalScroll(page)
+      await checkLayout(page)
       // Let the filter bar's entrance fade finish before the shot.
       await page.waitForFunction(() => [...document.querySelectorAll('main > *')].every((el) => getComputedStyle(el).opacity === '1'))
       await shot(page, `board-overview-${name}`)
@@ -255,7 +338,7 @@ test.describe('visual: mockup boards', () => {
     await mockApi({ ...PANEL_ROUTES, '/api/pipeline/status': vectorsNext() })
     await page.goto('/pipeline-demo?step=vectors')
     await expect(page.getByRole('heading', { name: 'Analysis in 5 steps' })).toBeVisible()
-    await noHorizontalScroll(page)
+    await checkLayout(page)
     await shot(page, 'board-mobile')
   })
 })

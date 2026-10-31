@@ -34,6 +34,7 @@ export default {
         error: '#ba1a1a',
         surface: '#f8f9fa',
         'primary-fixed-dim': '#a3c9ff',
+        'primary-tint': '#f5f9ff',
         'surface-container-lowest': '#ffffff',
         'on-secondary': '#ffffff',
         'on-primary': '#ffffff',

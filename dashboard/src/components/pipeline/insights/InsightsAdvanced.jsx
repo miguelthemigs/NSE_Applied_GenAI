@@ -96,7 +96,7 @@ export default function InsightsAdvanced({ model, maxDocuments, onMaxDocumentsCh
             type="button"
             onClick={clearCache}
             disabled={disabled || clearing}
-            className="inline-flex items-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-error text-sm font-semibold hover:bg-error-container disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 min-h-[44px] px-4 py-2.5 rounded-[10px] border border-outline-variant bg-surface-container-lowest text-error text-sm font-semibold hover:bg-error-container disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Icon name="delete" className="text-[18px]" />
             {t('insights.clearCache')}

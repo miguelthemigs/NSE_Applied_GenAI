@@ -10,7 +10,7 @@ import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 import { DONE_CARD_STATES } from '../utils/doneMessage';
 import { PIPELINE_STEPS } from '../config/pipelineSteps';
-import { DEFAULT_TIER, isTier, modelFor } from '../config/modelTiers';
+import { DEFAULT_TIER, TIER_KEYS, isTier, modelFor } from '../config/modelTiers';
 import TierPicker from './pipeline/TierPicker';
 import AdvancedModelSelect from './pipeline/AdvancedModelSelect';
 import StepHeader from './pipeline/StepHeader';
@@ -42,6 +42,8 @@ export default function VectorDBBuilder({ onNavigate }) {
   const [logs, setLogs] = useState([]);
   const [currentDoc, setCurrentDoc] = useState('');
   const [download, setDownload] = useState(null);
+  // What the running build actually uses (a resumed checkpoint brings its own columns and model).
+  const [running, setRunning] = useState(null);
 
   // Configuration state
   const [columns, setColumns] = useState([]);
@@ -118,6 +120,9 @@ export default function VectorDBBuilder({ onNavigate }) {
     setDownload(null);
     setResult(null);
     setVectorCheckpoint(null);
+    // Name the model by its tier where it is one (the picked tier wins: Quick and Balanced share a model).
+    const runTier = modelFor('vectors', tier, null) === model ? tier : TIER_KEYS.find((k) => modelFor('vectors', k, null) === model);
+    setRunning({ cols: cols.length, model: runTier ? shortTier(t('tier.' + runTier)) : model });
 
     let sawEvent = false;
     let succeeded = false;
@@ -194,7 +199,7 @@ export default function VectorDBBuilder({ onNavigate }) {
         <>
           <div className={stepBody}>
             {statusNotice && (
-              <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
+              <p role="alert" className="m-0 rounded-[12px] bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
             )}
 
             {result?.error && !loading && (
@@ -214,10 +219,11 @@ export default function VectorDBBuilder({ onNavigate }) {
               <>
                 <div className="flex flex-wrap gap-2 text-sm text-on-surface-variant">
                   <span className={chip}>{t('vec.rows', { n: formatNumber(rowCount) })}</span>
-                  <span className={chip}>{t('vec.columns.chosen', { x: selectedColumns.length, y: columns.length })}</span>
-                  <span className={chip}>{t('common.model')}: {modelName}</span>
+                  {running && <span className={chip}>{t('vec.columns.count', { n: formatNumber(running.cols) })}</span>}
+                  {running && <span className={chip}>{t('common.model')}: {running.model}</span>}
                 </div>
                 <ProgressPanel stage={currentStage} progress={progress} logs={currentDoc ? [...logs, currentDoc] : logs} download={download ?? undefined} />
+                <p className="m-0 text-sm text-on-surface-variant">{t('progress.browseNote')}</p>
               </>
             )}
 
@@ -235,7 +241,7 @@ export default function VectorDBBuilder({ onNavigate }) {
                 )}
 
                 {vectorCheckpoint && (
-                  <div className="flex flex-wrap items-start justify-between gap-4 rounded-xl border border-warning/30 bg-warning-container p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-4 rounded-[12px] border border-warning/30 bg-warning-container p-4">
                     <div className="flex items-start gap-3 min-w-0">
                       <Icon name="schedule" className="text-[20px] text-warning shrink-0" />
                       <div className="min-w-0">
@@ -260,7 +266,7 @@ export default function VectorDBBuilder({ onNavigate }) {
                 )}
 
                 {configError && (
-                  <div className="flex items-start gap-3 rounded-xl bg-warning-container text-on-surface p-4 text-sm">
+                  <div className="flex items-start gap-3 rounded-[12px] bg-warning-container text-on-surface p-4 text-sm">
                     <Icon name="warning" className="text-[20px] text-warning shrink-0" />
                     <span>{configError === 'columns' ? t('vec.err.columns') : t('vec.err.connect')}</span>
                   </div>
@@ -282,7 +288,7 @@ export default function VectorDBBuilder({ onNavigate }) {
                         return (
                           <label
                             key={col}
-                            className={`flex items-center gap-3 min-h-[44px] px-3 py-2 rounded-xl border cursor-pointer min-w-0 ${isSelected ? 'border-primary bg-[#f5f9ff]' : 'border-outline-variant hover:bg-surface-container-low'}`}
+                            className={`flex items-center gap-3 min-h-[44px] px-3 py-2 rounded-[12px] border cursor-pointer min-w-0 ${isSelected ? 'border-primary bg-primary-tint' : 'border-outline-variant hover:bg-surface-container-low'}`}
                           >
                             <input type="checkbox" checked={isSelected} onChange={() => toggleColumn(col)} className={checkbox} />
                             <span className="text-sm font-medium text-on-surface truncate" title={col}>{col}</span>

@@ -94,6 +94,18 @@ Line numbers are as of commit `6a48c37`. "(Done card)" and "(one-liner)" refer t
 | QueryTab:123-203 | Institution / Academic Year / Location / Programme / Study Mode / Cohort | Instelling / Studiejaar / Locatie / Opleiding / Studievorm / Cohort | Institution / Academic year / Location / Programme / Study mode / Cohort |
 | QueryTab:~226-261 | Searching... / Search Database / ❌ Error: / 📊 Results for "q" / No results found… / Match: {x}% | Zoeken… / Zoeken / Zoeken is niet gelukt: / {n} antwoorden bij "{q}" / Geen antwoorden gevonden. Probeer andere woorden of minder filters. / Overeenkomst {x}% | Searching… / Search / Search didn't work: / {n} answers for "{q}" / No answers found. Try other words or fewer filters. / Match {x}% |
 
+### Added in Task 18 (mockup fidelity)
+
+| key | Where | NL | EN |
+|---|---|---|---|
+| `anon.phase.upload` / `.columns` / `.review` | AnonymizerTab (Phases) | Uploaden / Kolommen kiezen / Resultaten controleren | Upload / Choose columns / Check results |
+| `anon.phase.label` | AnonymizerTab (Phases, aria-label) | Onderdelen van deze stap | Parts of this step |
+| `anon.advanced` | AnonymizerTab (Advanced summary) | Geavanceerd · grondigheid en woordenfilter | Advanced · thoroughness and word filter |
+| `vec.columns.count` | VectorDBBuilder (running chip) | {n} kolommen | {n} columns |
+| `download.once` | ProgressPanel (download box) | Dit gebeurt maar één keer. Daarna staat het model op deze computer. | This happens only once. After that the model stays on this computer. |
+| `progress.browseNote` | Steps 1–4 while running | Je kunt de andere stappen bekijken terwijl dit loopt. Starten kan pas als deze stap klaar is. | You can look at the other steps while this runs. You can start one once this step has finished. |
+| `overview.leadPlain` | Overview (header without themes) | Open antwoorden van studenten, ingedeeld in thema's en samengevat door AI. | Students' open answers, grouped into themes and summarised by AI. |
+
 ## Elsewhere
 
 | file:line | Current | NL | EN |
