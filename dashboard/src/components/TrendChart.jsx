@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { YEARS } from '../data/themes'
+import Icon from './Icon.jsx'
 
 const W = 340
 const H = 160
@@ -50,7 +51,7 @@ export default function TrendChart({ activeTheme, allThemes }) {
     <div className="bg-surface-container-low rounded-xl p-4 md:p-6 flex flex-col gap-4">
       <div className="flex justify-between items-center">
         <h3 className="text-base md:text-lg font-bold font-headline text-primary">Trend Analysis</h3>
-        <span className="material-symbols-outlined text-outline text-xl">trending_up</span>
+        <Icon name="trending_up" className="text-outline text-xl" />
       </div>
 
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="overflow-visible">

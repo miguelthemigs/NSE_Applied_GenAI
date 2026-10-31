@@ -24,6 +24,7 @@ import {
   normalizeFilters,
   searchFromFilters,
 } from "../utils/filters";
+import Icon from '../components/Icon.jsx'
 
 function normaliseComment(comment) {
   return String(comment || "").replace(/^"+|"+$/g, "");
@@ -254,9 +255,7 @@ function CommentCard({ comment, accentColor, index = 0 }) {
           style={{ color: accentColor }}
         >
           {expanded ? t("detail.showLess") : t("detail.showMore")}
-          <span className="material-symbols-outlined text-xs">
-            {expanded ? "keyboard_arrow_up" : "keyboard_arrow_down"}
-          </span>
+          <Icon name={expanded ? "keyboard_arrow_up" : "keyboard_arrow_down"} className="text-xs" />
         </button>
       )}
     </motion.div>
@@ -313,12 +312,7 @@ function SuggestionSection({ suggestions, accentColor }) {
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-4">
         <div>
           <div className="flex items-center gap-2">
-            <span
-              className="material-symbols-outlined text-xl"
-              style={{ color: accentColor, fontVariationSettings: "'FILL' 1" }}
-            >
-              lightbulb
-            </span>
+            <Icon name="lightbulb" filled className="text-xl" style={{ color: accentColor }} />
             <h2 className="text-base md:text-lg font-bold font-headline text-on-surface">
               {t("detail.suggestions.title")}
             </h2>
@@ -375,12 +369,7 @@ function FeedbackSummaryBlock({
     >
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-start gap-2.5">
-          <span
-            className="material-symbols-outlined mt-0.5"
-            style={{ color, fontVariationSettings: "'FILL' 1" }}
-          >
-            {icon}
-          </span>
+          <Icon name={icon} filled className="mt-0.5" style={{ color }} />
           <div>
             <p
               className="text-[10px] font-bold uppercase tracking-wider"
@@ -437,15 +426,11 @@ function FeedbackSummaryBlock({
                   className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold border-none bg-transparent cursor-pointer disabled:cursor-default disabled:opacity-50 p-0"
                   style={{ color }}
                 >
-                  <span className="material-symbols-outlined text-base">
-                    forum
-                  </span>
+                  <Icon name="forum" className="text-base" />
                   {card.relatedComments.length > 0
                     ? t(expanded ? "detail.comments.hide" : "detail.comments.read", { n: card.relatedComments.length })
                     : t("detail.comments.none")}
-                  <span className="material-symbols-outlined text-base">
-                    {expanded ? "expand_less" : "expand_more"}
-                  </span>
+                  <Icon name={expanded ? "expand_less" : "expand_more"} className="text-base" />
                 </button>
 
                 {expanded && card.relatedComments.length > 0 && (
@@ -507,12 +492,7 @@ function AIFeedbackBento({
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-5">
         <div>
           <div className="flex items-center gap-2">
-            <span
-              className="material-symbols-outlined"
-              style={{ color: accentColor, fontVariationSettings: "'FILL' 1" }}
-            >
-              auto_awesome
-            </span>
+            <Icon name="auto_awesome" filled style={{ color: accentColor }} />
             <h2 className="text-base md:text-lg font-bold font-headline text-on-surface">
               {t("detail.bento.title")}
             </h2>
@@ -721,9 +701,7 @@ function SubthemesList({
         <h2 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
           {t("detail.subthemes.title")}
         </h2>
-        <span className="material-symbols-outlined text-outline text-xl">
-          layers
-        </span>
+        <Icon name="layers" className="text-outline text-xl" />
       </div>
 
       {hasRows ? (
@@ -797,9 +775,7 @@ function SubthemesList({
                   <span>{t("overview.card.comments", { n: row.quote_count ?? row.mentions })}</span>
                   <span className="flex items-center gap-0.5 uppercase tracking-wider font-semibold">
                     {t("detail.breakdown.action")}{" "}
-                    <span className="material-symbols-outlined text-[10px]">
-                      chevron_right
-                    </span>
+                    <Icon name="chevron_right" className="text-[10px]" />
                   </span>
                 </div>
               </motion.button>
@@ -843,12 +819,7 @@ function QuickStats({ activeData, accentColor }) {
           }}
           className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/10 shadow-sm flex flex-col items-center gap-1"
         >
-          <span
-            className="material-symbols-outlined text-lg"
-            style={{ color: accentColor, fontVariationSettings: "'FILL' 1" }}
-          >
-            {stat.icon}
-          </span>
+          <Icon name={stat.icon} filled className="text-lg" style={{ color: accentColor }} />
           <span className="text-xl font-extrabold font-headline text-on-surface tabular-nums">
             {stat.value}
           </span>
@@ -1107,12 +1078,10 @@ export default function ViewMorePage() {
             to={{ pathname: "/", search: filterSearch }}
             className="hover:text-on-surface transition-colors flex items-center gap-1 no-underline text-on-surface-variant/70"
           >
-            <span className="material-symbols-outlined text-base">home</span>
+            <Icon name="home" className="text-base" />
             {t("nav.overview")}
           </Link>
-          <span className="material-symbols-outlined text-xs text-outline select-none">
-            chevron_right
-          </span>
+          <Icon name="chevron_right" className="text-xs text-outline select-none" />
           {decodedSubtheme ? (
             <>
               <button
@@ -1126,9 +1095,7 @@ export default function ViewMorePage() {
               >
                 {themeLabel(t, theme.name)}
               </button>
-              <span className="material-symbols-outlined text-xs text-outline select-none">
-                chevron_right
-              </span>
+              <Icon name="chevron_right" className="text-xs text-outline select-none" />
               <span className="font-bold" style={{ color: colors.accent }}>
                 {decodedSubtheme}
               </span>
@@ -1204,9 +1171,7 @@ export default function ViewMorePage() {
               onClick={clearFilters}
               className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors border-none bg-transparent cursor-pointer"
             >
-              <span className="material-symbols-outlined text-sm">
-                filter_alt_off
-              </span>
+              <Icon name="filter_alt_off" className="text-sm" />
               {t("overview.clearFilters")}
             </button>
           )}
@@ -1241,12 +1206,7 @@ export default function ViewMorePage() {
           <div className="relative z-10 p-5 md:p-8">
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
               <div className="flex items-start gap-4">
-                <span
-                  className="material-symbols-outlined text-4xl md:text-5xl shrink-0 text-white/90"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
-                >
-                  {theme.icon}
-                </span>
+                <Icon name={theme.icon} filled className="text-4xl md:text-5xl shrink-0 text-white/90" />
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-white/60 mb-1">
                     {activeData.isSubtheme
@@ -1281,7 +1241,7 @@ export default function ViewMorePage() {
         {/* The model is not downloaded yet: say where to start it (cached text still shows below). */}
         {liveData?.code === "error.model_missing" && (
           <div role="status" className="mt-6 p-4 rounded-2xl bg-warning-container text-on-surface flex items-start gap-3">
-            <span className="material-symbols-outlined text-2xl shrink-0" aria-hidden="true">info</span>
+            <Icon name="info" className="text-2xl shrink-0" />
             <div className="min-w-0">
               <p className="m-0 font-semibold">{t(llmErrorKey(liveData.code))}</p>
               <details className="mt-1 text-sm">
@@ -1303,12 +1263,7 @@ export default function ViewMorePage() {
             {activeData.isSubtheme ? (
               activeData.not_cached ? (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center">
-                  <span
-                    className="material-symbols-outlined text-amber-500 text-4xl mb-3 block"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    hourglass_empty
-                  </span>
+                  <Icon name="hourglass_empty" filled className="text-amber-500 text-4xl mb-3 block" />
                   <p className="text-sm font-bold text-amber-900">
                     {t("detail.notCached.title")}
                   </p>
@@ -1468,9 +1423,7 @@ export default function ViewMorePage() {
                     className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl text-white text-xs font-bold px-3 py-3 transition-all shadow-sm no-underline hover:opacity-90"
                     style={{ background: colors.gradient }}
                   >
-                    <span className="material-symbols-outlined text-base">
-                      dashboard
-                    </span>
+                    <Icon name="dashboard" className="text-base" />
                     {t("detail.backDashboard")}
                   </Link>
                   <button
@@ -1486,9 +1439,7 @@ export default function ViewMorePage() {
                     className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border text-xs font-bold px-3 py-3 transition-colors cursor-pointer hover:opacity-80 bg-transparent"
                     style={{ borderColor: colors.accent, color: colors.accent }}
                   >
-                    <span className="material-symbols-outlined text-base">
-                      arrow_upward
-                    </span>
+                    <Icon name="arrow_upward" className="text-base" />
                     {t("detail.backTheme")}
                   </button>
                 </div>
@@ -1498,9 +1449,7 @@ export default function ViewMorePage() {
                   className="inline-flex items-center justify-center gap-2 w-full rounded-xl text-white text-sm font-bold px-4 py-3 transition-all shadow-sm no-underline hover:opacity-90"
                   style={{ background: colors.gradient }}
                 >
-                  <span className="material-symbols-outlined text-base">
-                    dashboard
-                  </span>
+                  <Icon name="dashboard" className="text-base" />
                   {t("detail.backDashboard")}
                 </Link>
               )}

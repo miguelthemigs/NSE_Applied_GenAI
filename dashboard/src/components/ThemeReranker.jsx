@@ -130,9 +130,7 @@ export default function ThemeReranker({ onNavigate }) {
     <div className="max-w-4xl mx-auto space-y-8 p-6 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100">
       <div className="flex items-center space-x-4 pb-4 border-b border-gray-100">
         <div className="p-3 bg-gradient-to-tr from-indigo-500 to-sky-500 text-white rounded-xl shadow-lg">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-          </svg>
+          <Icon name="forum" className="text-2xl" />
         </div>
         <div>
           <h2 className="text-3xl font-extrabold tracking-tight text-gray-900">{t('step.rerank')}</h2>

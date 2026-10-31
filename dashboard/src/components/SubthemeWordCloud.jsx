@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { getThemeColor } from '../constants/themeColors'
 import { themeLabel } from '../constants/realThemes'
 import { useI18n } from '../i18n/I18nProvider'
+import Icon from './Icon.jsx'
 
 export default function SubthemeWordCloud({ themes, empty = false, missingFilteredData = false }) {
   const { t } = useI18n()
@@ -44,7 +45,7 @@ export default function SubthemeWordCloud({ themes, empty = false, missingFilter
 
       {empty ? (
         <div className="flex flex-col items-center justify-center gap-2 py-8 min-h-[120px] text-center">
-          <span className="material-symbols-outlined text-3xl text-outline">layers_clear</span>
+          <Icon name="layers_clear" className="text-3xl text-outline" />
           <p className="text-sm font-bold text-primary">{t('cloud.noMatch.title')}</p>
           <p className="text-xs text-on-surface-variant/70">
             {t('cloud.noMatch.body')}
@@ -52,7 +53,7 @@ export default function SubthemeWordCloud({ themes, empty = false, missingFilter
         </div>
       ) : missingFilteredData ? (
         <div className="flex flex-col items-center justify-center gap-2 py-8 min-h-[120px] text-center">
-          <span className="material-symbols-outlined text-3xl text-outline">cloud_off</span>
+          <Icon name="cloud_off" className="text-3xl text-outline" />
           <p className="text-sm font-bold text-primary">{t('cloud.missing.title')}</p>
           <p className="text-xs text-on-surface-variant/70">
             {t('cloud.missing.body')}
@@ -60,7 +61,7 @@ export default function SubthemeWordCloud({ themes, empty = false, missingFilter
         </div>
       ) : words.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-8 min-h-[120px] text-center">
-          <span className="material-symbols-outlined text-3xl text-outline">cloud_off</span>
+          <Icon name="cloud_off" className="text-3xl text-outline" />
           <p className="text-sm font-bold text-primary">{t('cloud.none.title')}</p>
           <p className="text-xs text-on-surface-variant/70">
             {t('cloud.none.body')}

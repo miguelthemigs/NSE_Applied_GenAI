@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useI18n } from '../i18n/I18nProvider.jsx'
 import LanguageToggle from './LanguageToggle.jsx'
+import Icon from './Icon.jsx'
 
 export default function NavBar() {
   const location = useLocation()
@@ -19,12 +20,7 @@ export default function NavBar() {
           to={{ pathname: '/', search: location.search }}
           className="flex items-center gap-2.5 group no-underline"
         >
-          <span
-            className="material-symbols-outlined text-2xl text-white/90 group-hover:text-white transition-colors"
-            style={{ fontVariationSettings: "'FILL' 1" }}
-          >
-            insights
-          </span>
+          <Icon name="insights" filled className="text-2xl text-white/90 group-hover:text-white transition-colors" />
           <span className="text-lg font-extrabold font-headline text-white tracking-tight">
             NSE<span className="text-primary-fixed-dim"> Insights</span>
           </span>
@@ -47,7 +43,7 @@ export default function NavBar() {
                   }
                 `}
               >
-                <span className="material-symbols-outlined text-lg">{link.icon}</span>
+                <Icon name={link.icon} className="text-lg" />
                 <span className="hidden sm:inline">{link.label}</span>
                 {isActive && (
                   <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-primary-fixed-dim rounded-full" />

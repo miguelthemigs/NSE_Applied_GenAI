@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
+import Icon from './Icon.jsx'
 
 export default function FilterDropdown({ icon, label, value, options, availableOptions, onChange }) {
   const { t } = useI18n()
@@ -57,7 +58,7 @@ export default function FilterDropdown({ icon, label, value, options, availableO
             : 'bg-surface-container-low text-primary hover:bg-surface-container'
         }`}
       >
-        <span className="material-symbols-outlined text-lg flex-shrink-0">{icon}</span>
+        <Icon name={icon} className="text-lg flex-shrink-0" />
         <div className="flex flex-col flex-1 min-w-0">
           <span className={`text-[9px] uppercase tracking-widest font-bold ${isActive ? 'opacity-70' : 'opacity-60'}`}>
             {label}
@@ -66,11 +67,10 @@ export default function FilterDropdown({ icon, label, value, options, availableO
             {show(value)}
           </span>
         </div>
-        <span
-          className={`material-symbols-outlined text-sm flex-shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-        >
-          expand_more
-        </span>
+        <Icon
+          name="expand_more"
+          className={`text-sm flex-shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
       </button>
 
       {open && (
@@ -78,9 +78,7 @@ export default function FilterDropdown({ icon, label, value, options, availableO
           {options.length > 6 && (
             <div className="p-2 border-b border-outline-variant/15">
               <div className="relative">
-                <span className="material-symbols-outlined text-sm text-outline absolute left-2.5 top-1/2 -translate-y-1/2">
-                  search
-                </span>
+                <Icon name="search" className="text-sm text-outline absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
                   ref={searchInputRef}
                   type="text"
@@ -112,10 +110,10 @@ export default function FilterDropdown({ icon, label, value, options, availableO
                   <span>{show(opt)}</span>
                   <span className="flex items-center gap-1">
                     {!available && (
-                      <span className="material-symbols-outlined text-xs opacity-40">block</span>
+                      <Icon name="block" className="text-xs opacity-40" />
                     )}
                     {opt === value && (
-                      <span className="material-symbols-outlined text-sm text-primary">check</span>
+                      <Icon name="check" className="text-sm text-primary" />
                     )}
                   </span>
                 </button>

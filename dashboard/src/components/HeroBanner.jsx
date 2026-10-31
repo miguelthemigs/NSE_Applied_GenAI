@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useI18n } from '../i18n/I18nProvider'
 import { themeLabel } from '../constants/realThemes'
+import Icon from './Icon.jsx'
 
 function AnimatedNumber({ value, label, icon, delay = 0 }) {
   return (
@@ -11,12 +12,7 @@ function AnimatedNumber({ value, label, icon, delay = 0 }) {
       transition={{ duration: 0.6, delay, ease: [0.16, 1, 0.3, 1] }}
       className="flex flex-col items-center gap-1 px-4 py-3 rounded-xl bg-white/8 border border-white/10 backdrop-blur-sm min-w-[110px]"
     >
-      <span
-        className="material-symbols-outlined text-lg text-white/70"
-        style={{ fontVariationSettings: "'FILL' 1" }}
-      >
-        {icon}
-      </span>
+      <Icon name={icon} filled className="text-lg text-white/70" />
       <span className="text-2xl md:text-3xl font-extrabold font-headline text-white tabular-nums">
         {value}
       </span>
@@ -87,12 +83,7 @@ export default function HeroBanner({ themes, lastUpdated }) {
               transition={{ delay: 0.2 }}
               className="text-xs font-bold uppercase tracking-widest text-white/50 mb-2 flex items-center gap-2"
             >
-              <span
-                className="material-symbols-outlined text-sm"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                insights
-              </span>
+              <Icon name="insights" filled className="text-sm" />
               {t('overview.eyebrow')}
             </motion.p>
             <motion.h1
@@ -151,12 +142,7 @@ export default function HeroBanner({ themes, lastUpdated }) {
                 transition={{ duration: 0.6, delay: 0.7, ease: [0.16, 1, 0.3, 1] }}
                 className="flex flex-col items-center gap-1 px-4 py-3 rounded-xl bg-white/8 border border-white/10 backdrop-blur-sm min-w-[110px]"
               >
-                <span
-                  className="material-symbols-outlined text-lg text-amber-300"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
-                >
-                  trending_up
-                </span>
+                <Icon name="trending_up" filled className="text-lg text-amber-300" />
                 <span className="text-sm font-extrabold font-headline text-white text-center leading-tight">
                   {topName.length > 18 ? topName.slice(0, 16) + '…' : topName}
                 </span>

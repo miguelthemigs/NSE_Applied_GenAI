@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { getThemeColor, THEME_COLOR_LIST } from '../constants/themeColors'
+import Icon from './Icon.jsx'
 
 export default function ThemeBarChart({ themes }) {
   const sorted = useMemo(() => {
@@ -22,12 +23,7 @@ export default function ThemeBarChart({ themes }) {
             Comments per theme — ranked by frequency
           </p>
         </div>
-        <span
-          className="material-symbols-outlined text-xl text-outline"
-          style={{ fontVariationSettings: "'FILL' 1" }}
-        >
-          bar_chart
-        </span>
+        <Icon name="bar_chart" filled className="text-xl text-outline" />
       </div>
 
       <div className="flex flex-col gap-3">
@@ -40,12 +36,7 @@ export default function ThemeBarChart({ themes }) {
             <div key={theme.id} className="group">
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-2">
-                  <span
-                    className="material-symbols-outlined text-base"
-                    style={{ color: colors.accent, fontVariationSettings: "'FILL' 1" }}
-                  >
-                    {theme.icon}
-                  </span>
+                  <Icon name={theme.icon} filled className="text-base" style={{ color: colors.accent }} />
                   <span className="text-xs font-bold text-on-surface group-hover:text-primary transition-colors">
                     {theme.name}
                   </span>

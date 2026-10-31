@@ -64,12 +64,7 @@ function LiveCompareSection({ compare }) {
   return (
     <div className="mt-10 bg-surface-container-lowest rounded-2xl p-6 md:p-10 shadow-ambient border border-outline-variant/10">
       <div className="flex items-center gap-2 mb-6">
-        <span
-          className="material-symbols-outlined text-base text-tertiary-container"
-          style={{ fontVariationSettings: "'FILL' 1" }}
-        >
-          hub
-        </span>
+        <Icon name="hub" filled className="text-base text-tertiary-container" />
         <h2 className="text-base font-bold font-headline text-primary">
           {t('compare.live.title')}
         </h2>
@@ -158,7 +153,7 @@ export default function Vergelijken() {
                   : 'text-on-surface-variant hover:bg-surface-container-low'
               }`}
             >
-              <span className="material-symbols-outlined text-lg">{f.icon}</span>
+              <Icon name={f.icon} className="text-lg" />
               <span>{f.label}</span>
             </button>
           ))}
@@ -287,7 +282,7 @@ export default function Vergelijken() {
           <div className="mt-8 md:mt-10 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
             <div className="bg-surface-container-lowest p-8 rounded-2xl shadow-editorial">
               <div className="flex items-center gap-3 mb-4">
-                <span className="material-symbols-outlined text-tertiary-container">trending_up</span>
+                <Icon name="trending_up" className="text-tertiary-container" />
                 <h3 className="font-headline font-bold text-lg text-primary">{t('compare.biggest.title')}</h3>
               </div>
               <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
@@ -318,12 +313,7 @@ export default function Vergelijken() {
                   {t('compare.share')}
                 </button>
               </div>
-              <span
-                className="material-symbols-outlined absolute -bottom-4 -right-4 text-9xl text-white/5"
-                style={{ fontSize: '9rem' }}
-              >
-                lightbulb
-              </span>
+              <Icon name="lightbulb" className="absolute -bottom-4 -right-4 text-9xl text-white/5" style={{ fontSize: '9rem' }} />
             </div>
           </div>
 

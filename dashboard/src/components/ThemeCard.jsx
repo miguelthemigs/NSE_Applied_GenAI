@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { getThemeColor } from '../constants/themeColors'
 import { themeLabel, themeText } from '../constants/realThemes'
 import { useI18n } from '../i18n/I18nProvider'
+import Icon from './Icon.jsx'
 
 function MiniDonutChart({ subthemeMentions, accentColor }) {
   if (!subthemeMentions || subthemeMentions.length === 0) return null
@@ -118,12 +119,7 @@ export default function ThemeCard({ theme, size, filters, index = 0 }) {
         >
           <div className="flex justify-between items-start gap-4">
             <div className="flex flex-col gap-2">
-              <span
-                className="material-symbols-outlined text-3xl"
-                style={{ color: colors.accent, fontVariationSettings: "'FILL' 1" }}
-              >
-                {theme.icon}
-              </span>
+              <Icon name={theme.icon} filled className="text-3xl" style={{ color: colors.accent }} />
               <span
                 className="text-xs font-semibold px-2 py-0.5 rounded w-fit"
                 style={{
@@ -190,12 +186,7 @@ export default function ThemeCard({ theme, size, filters, index = 0 }) {
       >
         <div className="flex justify-between items-start gap-2">
           <div className="flex flex-col gap-1.5">
-            <span
-              className="material-symbols-outlined text-2xl"
-              style={{ color: colors.accent, fontVariationSettings: "'FILL' 1" }}
-            >
-              {theme.icon}
-            </span>
+            <Icon name={theme.icon} filled className="text-2xl" style={{ color: colors.accent }} />
             <span
               className="text-[10px] font-semibold px-1.5 py-0.5 rounded w-fit"
               style={{
