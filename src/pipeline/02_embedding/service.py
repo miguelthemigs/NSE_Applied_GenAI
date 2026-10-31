@@ -2,6 +2,7 @@ from importlib import import_module
 import json
 import os
 
+from src.config.model_tiers import tier_for_model
 from src.config.paths import ANONYMIZED_CSV_PATH, VECTOR_DB_PATH
 from src.pipeline import jobs, state
 from .embedding_models import DEFAULT_EMBEDDING_MODEL
@@ -29,6 +30,7 @@ def build_vectors_stream(
             "vectors",
             model=selected_model,
             documents=event.get("document_count"),
+            tier=tier_for_model("vectors", selected_model),
         )
 
     return jobs.tracked_stream(

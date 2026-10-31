@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 
+from src.config.model_tiers import model_tiers_payload
 from src.pipeline import state, status
 
 pipeline_bp = Blueprint("pipeline", __name__)
@@ -50,3 +51,12 @@ def skip_rerank():
         return jsonify({"status": "error", "error": "skipped must be a boolean"}), 400
     state.set_flag("rerank", "skipped", skipped)
     return _status_response()
+
+
+@pipeline_bp.route("/api/model-tiers", methods=["GET"])
+def model_tiers():
+    """The three tiers per step plus the technical ids for Advanced.
+
+    Size and cache lookups are best-effort: they never fail or block the route.
+    """
+    return jsonify(model_tiers_payload())

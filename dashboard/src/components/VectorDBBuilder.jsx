@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNdjsonStream } from '../hooks/useNdjsonStream';
 import { apiUrl } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
@@ -10,29 +10,11 @@ import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 import { DONE_CARD_STATES } from '../utils/doneMessage';
 import { PIPELINE_STEPS } from '../config/pipelineSteps';
+import { DEFAULT_TIER, isTier, modelFor } from '../config/modelTiers';
+import TierPicker from './pipeline/TierPicker';
+import { shortTier } from '../utils/doneMessage';
 
 const STEP_N = Object.fromEntries(PIPELINE_STEPS.map((s) => [s.id, s.n]));
-
-const AVAILABLE_MODELS = [
-  {
-    id: 'Octen/Octen-Embedding-0.6B',
-    name: 'Octen Embedding 0.6B',
-    role: 'compact',
-    recommended: true
-  },
-  {
-    id: 'Octen/Octen-Embedding-4B',
-    name: 'Octen Embedding 4B',
-    role: 'balanced',
-    recommended: false
-  },
-  {
-    id: 'Octen/Octen-Embedding-8B',
-    name: 'Octen Embedding 8B',
-    role: 'high',
-    recommended: false
-  }
-];
 
 export default function VectorDBBuilder({ onNavigate }) {
   const { t, formatNumber } = useI18n();
@@ -55,7 +37,16 @@ export default function VectorDBBuilder({ onNavigate }) {
   // Configuration state
   const [columns, setColumns] = useState([]);
   const [selectedColumns, setSelectedColumns] = useState([]);
-  const [selectedModel, setSelectedModel] = useState('Octen/Octen-Embedding-0.6B');
+  // Tier cards pick the model; an Advanced id (advancedModel) wins over the tier.
+  const [tier, setTier] = useState(DEFAULT_TIER);
+  const [advancedModel, setAdvancedModel] = useState(null);
+  const tierTouched = useRef(false);
+  const selectedModel = modelFor('vectors', tier, advancedModel);
+  // An existing build's tier is pre-selected until the user chooses one.
+  const builtTier = vectors?.summary?.tier;
+  useEffect(() => {
+    if (!tierTouched.current && isTier(builtTier)) setTier(builtTier);
+  }, [builtTier]);
   const [allowModelDownload, setAllowModelDownload] = useState(true);
   const [rowCount, setRowCount] = useState(0);
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -164,7 +155,7 @@ export default function VectorDBBuilder({ onNavigate }) {
     }
   };
 
-  const activeModel = AVAILABLE_MODELS.find(m => m.id === selectedModel);
+  const modelName = advancedModel || shortTier(t('tier.' + tier));
   const showDone = DONE_CARD_STATES.has(view.state) && !loading && !rerunning;
 
   return (
@@ -299,32 +290,15 @@ export default function VectorDBBuilder({ onNavigate }) {
             </div>
 
             {/* Model Selector */}
-            <div className="space-y-4 p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
-              <div className="flex items-center space-x-2 pb-2 border-b border-gray-50">
-                <Icon name="tune" className="text-xl text-gray-500" />
-                <h3 className="font-bold text-gray-800">{t('vec.model.title')}</h3>
-              </div>
-              <div className="space-y-2 max-h-80 overflow-y-auto p-1">
-                {AVAILABLE_MODELS.map(model => {
-                  const isSelected = selectedModel === model.id;
-                  return (
-                    <label key={model.id} onClick={() => setSelectedModel(model.id)} className={`block p-3 rounded-xl border-2 cursor-pointer transition-all duration-200 ${isSelected ? 'border-fuchsia-500 bg-fuchsia-50/50 shadow-sm' : 'border-gray-100 hover:border-gray-200 bg-white'}`}>
-                      <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 flex items-center justify-center w-5 h-5 rounded-full flex-shrink-0 transition-colors ${isSelected ? 'bg-fuchsia-500' : 'border-2 border-gray-300'}`}>
-                          {isSelected && <div className="w-2 h-2 bg-white rounded-full"></div>}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className={`font-bold text-sm ${isSelected ? 'text-fuchsia-900' : 'text-gray-700'}`}>{model.name}</p>
-                            {model.recommended && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">{t('common.recommended')}</span>}
-                          </div>
-                          <p className="text-xs text-gray-500 mt-1">{t('vec.role.' + model.role)}</p>
-                        </div>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
+            <div className="p-6 bg-white border border-gray-100 shadow-sm rounded-2xl md:col-span-2">
+              <TierPicker
+                step="vectors"
+                value={tier}
+                advancedModelId={advancedModel}
+                onChange={(next) => { tierTouched.current = true; setTier(next); setAdvancedModel(null); }}
+                onAdvancedChange={(id) => { tierTouched.current = true; setAdvancedModel(id); }}
+                disabled={loading}
+              />
             </div>
           </div>
 
@@ -347,7 +321,7 @@ export default function VectorDBBuilder({ onNavigate }) {
           {/* Summary and start button */}
           <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-gray-50 rounded-xl border border-gray-100">
             <div className="text-sm text-gray-600">
-              {t('vec.summary', { r: formatNumber(rowCount), model: activeModel?.name || selectedModel })}
+              {t('vec.summary', { r: formatNumber(rowCount), model: modelName })}
             </div>
             <GateReason stepId="vectors" onNavigate={onNavigate} className="ml-auto" />
             <button

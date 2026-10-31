@@ -558,6 +558,7 @@ class StreamWiringTests(unittest.TestCase):
         entry = state.load_state()["vectors"]
         self.assertEqual(entry["model"], "Octen/Octen-Embedding-0.6B")
         self.assertEqual(entry["documents"], 900)
+        self.assertEqual(entry["tier"], "balanced")
         self.assertIn("completed_at", entry)
         self.assertIsNone(jobs.active_job())
 

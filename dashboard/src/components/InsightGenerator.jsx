@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { AVAILABLE_LLM_MODELS, LLM_PROVIDER } from '../config/llmModels.js';
+import { DEFAULT_TIER, modelFor } from '../config/modelTiers.js';
+import TierPicker from './pipeline/TierPicker';
+import { shortTier } from '../utils/doneMessage';
+
+const LLM_PROVIDER = 'llama.cpp';
 import { useNdjsonStream } from '../hooks/useNdjsonStream';
 import { apiUrl } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
@@ -99,7 +103,10 @@ export default function InsightGenerator({ onNavigate }) {
   const [statusNotice, setStatusNotice] = useState(false);
 
   // Configuration
-  const [selectedModel, setSelectedModel] = useState('unsloth/gemma-4-12B-it-qat-GGUF:UD-Q4_K_XL');
+  // Tier cards pick the model; an Advanced id (advancedModel) wins over the tier.
+  const [tier, setTier] = useState(DEFAULT_TIER);
+  const [advancedModel, setAdvancedModel] = useState(null);
+  const selectedModel = modelFor('insights', tier, advancedModel);
   const [clearCache, setClearCache] = useState(false);
   const [allowModelDownload, setAllowModelDownload] = useState(true);
   const [maxDocuments, setMaxDocuments] = useState(240);
@@ -197,7 +204,6 @@ export default function InsightGenerator({ onNavigate }) {
   const estimatedMinutes = Math.round((extraThemeInsights * SECONDS_PER_INSIGHT) / 60);
 
   const selectAndStartModel = async (model) => {
-    setSelectedModel(model.id);
     const requestId = activationRequestRef.current + 1;
     activationRequestRef.current = requestId;
 
@@ -251,7 +257,7 @@ export default function InsightGenerator({ onNavigate }) {
     setLastRun(null);
     setStatusNotice(false);
     setCurrentStage('');
-    setLogs([{ kind: 'info', text: t('ins.log.start', { label: t(label), model: activeModel?.name || selectedModel }) }]);
+    setLogs([{ kind: 'info', text: t('ins.log.start', { label: t(label), model: modelName }) }]);
     setProgress(0);
 
     const MAX_RETRIES = 30;
@@ -339,7 +345,7 @@ export default function InsightGenerator({ onNavigate }) {
     }
   };
 
-  const activeModel = AVAILABLE_LLM_MODELS.find(m => m.id === selectedModel);
+  const modelName = advancedModel || shortTier(t('tier.' + tier));
   const showDone = DONE_CARD_STATES.has(view.state) && !generating && !rerunning;
 
   return (
@@ -404,38 +410,15 @@ export default function InsightGenerator({ onNavigate }) {
           <div className="grid md:grid-cols-2 gap-6">
 
             {/* Model Selector */}
-            <div className="space-y-4 p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
-              <div className="flex items-center space-x-2 pb-2 border-b border-gray-50">
-                <Icon name="tune" className="text-xl text-gray-500" />
-                <h3 className="font-bold text-gray-800">{t('ins.model.title')}</h3>
-              </div>
-              <div className="space-y-2 max-h-72 overflow-y-auto p-1">
-                {AVAILABLE_LLM_MODELS.map(model => {
-                  const isSelected = selectedModel === model.id;
-                  return (
-                    <button
-                      type="button"
-                      key={model.id}
-                      onClick={() => selectAndStartModel(model)}
-                      disabled={modelActivation.status === 'starting'}
-                      className={`block w-full text-left p-3 rounded-xl border-2 cursor-pointer transition-all duration-200 disabled:cursor-wait ${isSelected ? 'border-violet-500 bg-violet-50/50 shadow-sm' : 'border-gray-100 hover:border-gray-200 bg-white'}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 flex items-center justify-center w-5 h-5 rounded-full flex-shrink-0 transition-colors ${isSelected ? 'bg-violet-500' : 'border-2 border-gray-300'}`}>
-                          {isSelected && <div className="w-2 h-2 bg-white rounded-full"></div>}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className={`font-bold text-sm ${isSelected ? 'text-violet-900' : 'text-gray-700'}`}>{model.name}</p>
-                              {model.recommended && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">{t('common.recommended')}</span>}
-                          </div>
-                          <p className="text-[10px] text-gray-400 mt-1">{model.size}</p>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="space-y-4 p-6 bg-white border border-gray-100 shadow-sm rounded-2xl md:col-span-2">
+              <TierPicker
+                step="insights"
+                value={tier}
+                advancedModelId={advancedModel}
+                disabled={modelActivation.status === 'starting'}
+                onChange={(next, id) => { setTier(next); setAdvancedModel(null); selectAndStartModel({ id }); }}
+                onAdvancedChange={(id) => { setAdvancedModel(id); selectAndStartModel({ id: id ?? modelFor('insights', tier, null) }); }}
+              />
               {modelActivation.message && (
                 <div
                   className={`rounded-lg border px-3 py-2 text-xs ${
@@ -451,10 +434,6 @@ export default function InsightGenerator({ onNavigate }) {
                   {modelActivation.message}
                 </div>
               )}
-              <details className="text-[11px] text-gray-400">
-                <summary className="cursor-pointer">{t('action.advanced')}</summary>
-                <p className="mt-1 break-all">{t('ins.modelId', { id: selectedModel })}</p>
-              </details>
             </div>
 
             {/* Options Panel */}
@@ -568,7 +547,7 @@ export default function InsightGenerator({ onNavigate }) {
           {/* Summary + 4 Launchers */}
           <div className="space-y-3 p-4 bg-gray-50 rounded-xl border border-gray-100">
             <div className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-gray-800">{activeModel?.name}</span>
+              <span className="font-semibold text-gray-800">{modelName}</span>
               <span className="text-gray-300">•</span>
               <span className="text-gray-500">{t('ins.summary', { themes: THEME_COUNT, docs: maxDocuments })}</span>
               {filterDimensions.length > 0 && (
