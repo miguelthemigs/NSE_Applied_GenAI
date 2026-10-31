@@ -13,8 +13,8 @@ retrieval = import_module("src.pipeline.03_retrieval.service")
 settings = import_module("src.config.settings")
 llama_cpp_models = import_module("src.pipeline.04_generation.llama_cpp_models")
 
-# Rough wall-clock cost of one filtered summary on the balanced tier (126 -> 189 min).
-MINUTES_PER_SUMMARY = 1.5
+# Single source of the time estimate (the frontend consumes `estimate.minutes`).
+SECONDS_PER_INSIGHT = 90
 
 
 # Mapping: filter dimension key (sent by frontend) -> (filter_options bucket, canonical filter key)
@@ -193,6 +193,30 @@ def _valid_combos(grid: list[dict]) -> list[dict]:
     return retrieval.filter_valid_combos(grid) if grid else []
 
 
+def _estimate(count: int) -> dict:
+    # Integer round-half-up (matches JS Math.round); Python round() is half-to-even.
+    return {"count": count, "minutes": (count * SECONDS_PER_INSIGHT + 30) // 60}
+
+
+def _filtered_done(dimension_keys: list[str]) -> int:
+    """Valid filtered main entries whose filter keys are exactly the requested dimensions."""
+    wanted = {FILTER_DIMENSION_SOURCES[d][1] for d in dimension_keys if d in FILTER_DIMENSION_SOURCES}
+    done = 0
+    for key, value in pipeline_status._cache.load_cache().items():
+        marker = key.find("::filters=")
+        if marker < 0 or "::subquery=" in key[:marker]:
+            continue
+        if not pipeline_status._cache.cache_has_full_dashboard_payload(value):
+            continue
+        try:
+            filters = json.loads(key[marker + len("::filters="):])
+        except ValueError:
+            continue
+        if isinstance(filters, dict) and set(filters) == wanted:
+            done += 1
+    return done
+
+
 def insight_results(filter_dimensions: list[str]) -> dict:
     """Summary-coverage rows parsed from the caches. No LLM, no network."""
     _baseline, counts = pipeline_status._insight_counts()
@@ -212,8 +236,8 @@ def insight_results(filter_dimensions: list[str]) -> dict:
     else:
         sub_state = "done" if sub_done else "not_started"
 
-    filtered_done = counts["filtered_done"]
     if filter_dimensions:
+        filtered_done = _filtered_done(filter_dimensions)
         filtered_total = len(_valid_combos(_build_filter_grid(filter_dimensions))) * main_total
         if filtered_total and filtered_done >= filtered_total:
             filtered_state = "done"
@@ -221,12 +245,9 @@ def insight_results(filter_dimensions: list[str]) -> dict:
             filtered_state = "in_progress"
         else:
             filtered_state = "partial" if filtered_done else "not_started"
-        estimate = {
-            "count": filtered_total,
-            "minutes": round(filtered_total * MINUTES_PER_SUMMARY),
-        }
+        estimate = _estimate(filtered_total)
     else:
-        filtered_total, filtered_state, estimate = 0, "off", None
+        filtered_done, filtered_total, filtered_state, estimate = 0, 0, "off", None
 
     return {
         "rows": [
@@ -245,7 +266,8 @@ def insights_results():
     try:
         return jsonify(insight_results(dims))
     except Exception as exc:
-        return jsonify({"status": "error", "error": str(exc)}), 500
+        print(f"[INSIGHT RESULTS ERROR] {exc}")
+        return jsonify({"status": "error", "code": "error.backend"}), 500
 
 
 @insight_bp.route("/api/precompute-preview", methods=["POST"])
@@ -261,7 +283,13 @@ def precompute_preview():
     sizes = {}
     for dim_key, (bucket_key, _canonical) in FILTER_DIMENSION_SOURCES.items():
         sizes[dim_key] = len(options.get(bucket_key) or [])
-    return jsonify({"combos": len(grid), "valid_combos": len(valid_grid), "dimension_sizes": sizes})
+    estimate = _estimate(len(valid_grid) * pipeline_status.THEMES_TOTAL) if dimension_keys else None
+    return jsonify({
+        "combos": len(grid),
+        "valid_combos": len(valid_grid),
+        "dimension_sizes": sizes,
+        "estimate": estimate,
+    })
 
 
 @insight_bp.route("/api/llm-models", methods=["GET"])

@@ -62,6 +62,39 @@ class InsightResultsTests(unittest.TestCase):
         self.assertEqual(result["estimate"], {"count": 126, "minutes": 189})
         self.assertEqual(result["rows"][0]["state"], "not_started")
 
+    def test_estimate_rounds_half_up_for_odd_counts(self):
+        self._caches({}, {})
+        with mock.patch.object(jobs, "active_job", return_value=None):
+            for combos, count, minutes in ((1, 7, 11), (127, 889, 1334)):
+                self._combos(combos)
+                est = insight_routes.insight_results(["location"])["estimate"]
+                self.assertEqual(est, {"count": count, "minutes": minutes})
+        self.assertEqual(insight_routes._estimate(3)["minutes"], 5)
+        self.assertEqual(insight_routes._estimate(127)["minutes"], 191)
+
+    def test_preview_returns_same_estimate(self):
+        from app import create_app
+
+        self._combos(18)
+        res = create_app().test_client().post("/api/precompute-preview", json={"filter_dimensions": ["location"]})
+        self.assertEqual(res.get_json()["estimate"], {"count": 126, "minutes": 189})
+        res = create_app().test_client().post("/api/precompute-preview", json={})
+        self.assertIsNone(res.get_json()["estimate"])
+
+    def test_filtered_done_counts_only_requested_dimensions(self):
+        theme = INSIGHT_THEMES[0]
+        main = {
+            f'{theme}::filters={{"location":"0"}}': _entry(theme),
+            f'{theme}::filters={{"location":"0","programme":"P"}}': _entry(theme),
+            f'{theme}::filters={{"academic_year":"2024"}}': _entry(theme),
+        }
+        self._caches(main, {})
+        self._combos(1)
+        with mock.patch.object(jobs, "active_job", return_value=None):
+            row = insight_routes.insight_results(["location"])["rows"][2]
+        self.assertEqual(row["done"], 1)
+        self.assertLessEqual(row["done"], row["total"])
+
     def test_active_insights_job_and_partial_filtered(self):
         theme = INSIGHT_THEMES[0]
         self._caches({theme: _entry(theme), f'{theme}::filters={{"location":"0"}}': _entry(theme)}, {})
@@ -82,7 +115,14 @@ class InsightResultsTests(unittest.TestCase):
         with mock.patch.object(insight_routes, "insight_results", return_value={"rows": [], "estimate": None}) as fn, \
                 mock.patch.object(generation, "get_llm_client", side_effect=AssertionError("LLM touched")):
             res = create_app().test_client().get("/api/insights/results?filter_dimensions=academic_year,location,programme")
-        self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.status_code, 200)
+            fn.side_effect = RuntimeError("secret detail")
+            bad = create_app().test_client().get("/api/insights/results")
+            self.assertEqual(bad.status_code, 500)
+            self.assertEqual(bad.get_json(), {"status": "error", "code": "error.backend"})
+            fn.side_effect = None
+            fn.reset_mock()
+            create_app().test_client().get("/api/insights/results?filter_dimensions=academic_year,location,programme")
         fn.assert_called_once_with(["academic_year", "location", "programme"])
 
 
