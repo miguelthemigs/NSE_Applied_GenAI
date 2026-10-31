@@ -7,7 +7,7 @@ import json
 from importlib import import_module
 
 from src.config.settings import EMBEDDING_BATCH_SIZE, RERANKER_BATCH_SIZE
-from src.config.paths import CACHE_FILE, VECTOR_CHECKPOINT
+from src.config.paths import VECTOR_CHECKPOINT
 from src.config.response_quality import (
     LOW_INFORMATION_VALUE,
     RESPONSE_QUALITY_METADATA_KEY,
@@ -700,6 +700,7 @@ def build_vector_db(csv_path="data/anonymized_output.csv", db_path="./survey_vec
                 include_hnsw_space=False,
             )
         )
+        _invalidate_insight_cache()
         low_information_count = sum(
             response_quality(answer) == LOW_INFORMATION_VALUE
             for answer in df_combined["answer"]
@@ -933,6 +934,7 @@ def build_vector_db_stream(
                 include_hnsw_space=False,
             )
         )
+        _invalidate_insight_cache()
         _clear_vector_checkpoint()
 
         low_information_count = sum(

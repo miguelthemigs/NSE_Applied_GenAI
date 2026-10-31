@@ -15,7 +15,7 @@ cache = import_module("src.pipeline.04_generation.cache")
 
 
 def failing_stream(**_):
-    yield json.dumps({"status": "error", "message": "boom"}) + "\n"
+    yield json.dumps({"status": "error", "error": "boom"}) + "\n"
 
 
 class CacheInvalidationTests(unittest.TestCase):

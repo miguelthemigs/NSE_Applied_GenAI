@@ -153,7 +153,6 @@ class ThemeClassificationTests(unittest.TestCase):
                     "VECTOR_CHECKPOINT",
                     checkpoint_path,
                 ),
-                mock.patch.object(vector_builder, "CACHE_FILE", cache_path),
                 mock.patch.object(
                     import_module("src.pipeline.04_generation.cache"),
                     "CACHE_FILE",
@@ -209,13 +208,14 @@ class ThemeClassificationTests(unittest.TestCase):
             self.assertTrue(checkpoint_path.exists())
 
             second_model = BuildEmbeddingModel()
+            insight_cache = import_module("src.pipeline.04_generation.cache")
+            insight_cache.set_overview_response("k", b"stale")
             with (
                 mock.patch.object(
                     vector_builder,
                     "VECTOR_CHECKPOINT",
                     checkpoint_path,
                 ),
-                mock.patch.object(vector_builder, "CACHE_FILE", cache_path),
                 mock.patch.object(
                     import_module("src.pipeline.04_generation.cache"),
                     "CACHE_FILE",
@@ -251,6 +251,9 @@ class ThemeClassificationTests(unittest.TestCase):
                 ]
 
             self.assertEqual(events[-1]["status"], "success", events)
+            # A successful build invalidates the stale summaries.
+            self.assertFalse(cache_path.exists())
+            self.assertIsNone(insight_cache.get_overview_response("k"))
             self.assertEqual(second_model.document_batches, [["Teacher feedback response 100"]])
             completed = chromadb.PersistentClient(
                 path=str(db_path)
@@ -300,7 +303,6 @@ class ThemeClassificationTests(unittest.TestCase):
             )
             with (
                 mock.patch.object(vector_builder, "VECTOR_CHECKPOINT", checkpoint_path),
-                mock.patch.object(vector_builder, "CACHE_FILE", cache_path),
                 mock.patch.object(
                     import_module("src.pipeline.04_generation.cache"),
                     "CACHE_FILE",
