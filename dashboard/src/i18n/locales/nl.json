@@ -49,6 +49,7 @@
   "tier.download": "Eenmalige download ({size})",
   "download.running": "Het {tier}-model wordt gedownload: {done} van {total} · nog ongeveer {min} min",
   "download.unknown": "Het {tier}-model wordt gedownload… Dit gebeurt maar één keer.",
+  "progress.eta": "nog ongeveer {min} min",
   "download.failed": "Downloaden is niet gelukt. Controleer de internetverbinding en probeer het opnieuw.",
   "stage.load": "Model laden",
   "stage.read": "Gegevens lezen",

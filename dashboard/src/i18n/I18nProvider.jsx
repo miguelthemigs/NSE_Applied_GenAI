@@ -45,9 +45,16 @@ export function I18nProvider({ children }) {
       return s.replace(/\{(\w+)\}/g, (m, name) => (name in vars ? String(vars[name]) : m))
     }
     const formatNumber = (n) => new Intl.NumberFormat(locale).format(n)
-    const formatDate = (d) => new Intl.DateTimeFormat(locale, DATE_OPTIONS).format(d instanceof Date ? d : new Date(d))
-    const formatBytes = (bytes) =>
-      `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(bytes / 1e9)} GB`
+    // Missing or invalid input renders as '' rather than "NaN GB" or a RangeError.
+    const formatDate = (d) => {
+      if (d == null || d === '') return ''
+      const date = d instanceof Date ? d : new Date(d)
+      return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat(locale, DATE_OPTIONS).format(date)
+    }
+    const formatBytes = (bytes) => {
+      if (bytes == null || bytes === '' || !Number.isFinite(Number(bytes))) return ''
+      return `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Number(bytes) / 1e9)} GB`
+    }
     return { lang, setLang, t, formatNumber, formatDate, formatBytes }
   }, [lang, setLang])
 

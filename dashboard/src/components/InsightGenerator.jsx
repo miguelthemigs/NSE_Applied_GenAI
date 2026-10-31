@@ -5,6 +5,7 @@ import { apiUrl } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import Icon from './Icon';
 import GateReason from './pipeline/GateReason';
+import ProgressPanel from './pipeline/ProgressPanel';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 
@@ -88,15 +89,7 @@ export default function InsightGenerator({ onNavigate }) {
   useEffect(() => { refreshCacheStatus(); }, []);
   useEffect(() => { if (progress === 100) refreshCacheStatus(); }, [progress]);
 
-  const logRef = useRef(null);
   const activationRequestRef = useRef(0);
-
-  // Auto-scroll logs
-  useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-    }
-  }, [logs]);
 
   useEffect(() => {
     fetch(apiUrl('/api/vector-stats'))
@@ -565,73 +558,22 @@ export default function InsightGenerator({ onNavigate }) {
 
       {/* --- GENERATING PROGRESS (also stays visible on error so logs don't vanish) --- */}
       {(generating || (progress > 0 && progress < 100)) && (
-        <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
-          <div className="p-8 bg-gray-900 rounded-3xl shadow-2xl relative overflow-hidden ring-1 ring-white/10">
-            {/* Animated Background */}
-            <div className="absolute -top-24 -left-24 w-48 h-48 bg-violet-500/20 rounded-full blur-3xl"></div>
-            <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-blue-500/20 rounded-full blur-3xl"></div>
-
-            <div className="absolute top-0 left-0 w-full h-1 bg-gray-800">
-              <div 
-                className="h-full bg-gradient-to-r from-violet-500 via-blue-500 to-cyan-500 transition-all duration-500 ease-out" 
-                style={{ width: `${progress}%` }}
-              ></div>
+        <div className="space-y-3">
+          <ProgressPanel stage={currentStage} progress={progress} logs={logs.map((log) => log.text)} />
+          {/* Back button shown only when stopped mid-way (error state) */}
+          {!generating && (
+            <div className="flex items-center justify-between gap-3 flex-wrap p-4 bg-error-container text-error rounded-xl">
+              <span className="font-semibold">{t('ins.stopped')}</span>
+              <button
+                type="button"
+                onClick={() => { setProgress(0); setLogs([]); }}
+                className="flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-xl bg-white border border-outline-variant text-on-surface text-sm font-semibold hover:bg-surface-container-low"
+              >
+                <Icon name="arrow_back" className="text-base" />
+                {t('ins.back')}
+              </button>
             </div>
-
-            <div className="flex flex-col gap-5 relative z-10">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-white flex items-center gap-3">
-                  {generating ? (
-                    <div className="relative flex h-4 w-4">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-4 w-4 bg-violet-500"></span>
-                    </div>
-                  ) : (
-                    <Icon name="close" className="text-red-400" />
-                  )}
-                  {generating ? t('state.working') : t('ins.stopped')}
-                </h3>
-                <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-blue-400">
-                  {progress}%
-                </span>
-              </div>
-
-              {/* Active model badge */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-violet-300 bg-violet-500/20 px-2 py-1 rounded-md">{t('ins.model.used', { name: activeModel?.name })}</span>
-              </div>
-
-              {currentStage && (
-                <p className="text-sm text-white/80">{t('stage.' + currentStage)}</p>
-              )}
-
-              {/* Logs: raw backend messages live behind a disclosure */}
-              <details>
-                <summary className="text-xs text-white/70 cursor-pointer">{t('action.details')}</summary>
-                <div ref={logRef} className="mt-2 bg-black/50 rounded-xl p-4 h-56 overflow-y-auto font-mono text-xs border border-white/5 backdrop-blur-sm">
-                  {logs.map((log, i) => (
-                    <div key={i} className={`py-0.5 ${log.kind === 'ok' ? 'text-emerald-400' : log.kind === 'error' ? 'text-red-400' : log.kind === 'warn' ? 'text-amber-400' : 'text-green-400/80'}`}>
-                      {log.text}
-                    </div>
-                  ))}
-                  {generating && progress < 100 && (
-                    <div className="text-gray-500 animate-pulse mt-1">...</div>
-                  )}
-                </div>
-              </details>
-
-              {/* Back button shown only when stopped mid-way (error state) */}
-              {!generating && progress > 0 && progress < 100 && (
-                <button
-                  onClick={() => { setProgress(0); setLogs([]); }}
-                  className="self-start flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors"
-                >
-                  <Icon name="arrow_back" className="text-base" />
-                  {t('ins.back')}
-                </button>
-              )}
-            </div>
-          </div>
+          )}
         </div>
       )}
 

@@ -4,6 +4,7 @@ import { apiUrl, postJson } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import Icon from './Icon';
 import GateReason from './pipeline/GateReason';
+import ProgressPanel from './pipeline/ProgressPanel';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 
@@ -205,29 +206,7 @@ export default function ThemeReranker({ onNavigate }) {
         </div>
       )}
 
-      {loading && (
-        <div className="p-8 bg-gray-900 rounded-3xl shadow-2xl relative overflow-hidden ring-1 ring-white/10">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gray-800">
-            <div className="h-full bg-gradient-to-r from-indigo-500 to-sky-500 transition-all duration-500 ease-out" style={{ width: `${progress}%` }}></div>
-          </div>
-          <div className="relative z-10 space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-white">{t('state.working')}</h3>
-              <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-sky-300">{progress}%</span>
-            </div>
-            <div className="p-4 bg-black/40 rounded-xl border border-white/5">
-              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">{t('rerank.status')}</p>
-              <p className="text-sky-300 font-mono text-sm">{currentStage ? t('stage.' + currentStage) : t('state.working')}</p>
-            </div>
-            <details className="p-4 bg-black/40 rounded-xl border border-white/5">
-              <summary className="text-xs text-gray-400 font-semibold uppercase tracking-wider cursor-pointer">{t('action.details')}</summary>
-              <div className="mt-2 max-h-40 overflow-y-auto text-gray-300 text-xs font-mono space-y-1">
-                {logs.map((line, i) => <div key={i}>{line}</div>)}
-              </div>
-            </details>
-          </div>
-        </div>
-      )}
+      {loading && <ProgressPanel stage={currentStage} progress={progress} logs={logs} />}
 
       {result && !loading && (
         <div className={`p-6 rounded-2xl ${result.error ? 'bg-red-50 border border-red-100' : 'bg-emerald-50 border border-emerald-100'}`}>

@@ -82,4 +82,14 @@ describe('i18n', () => {
     wrap(<F />)
     expect(screen.getByTestId('f')).toHaveTextContent('1.234,5|1,2 GB|y')
   })
+
+  it('formatBytes and formatDate return an empty string for missing or invalid input', () => {
+    function F() {
+      const { formatBytes, formatDate } = useI18n()
+      const vals = [formatBytes(undefined), formatBytes(null), formatBytes('abc'), formatDate(undefined), formatDate(null), formatDate('not a date')]
+      return <p data-testid="f">{JSON.stringify(vals)}</p>
+    }
+    wrap(<F />)
+    expect(screen.getByTestId('f')).toHaveTextContent('["","","","","",""]')
+  })
 })

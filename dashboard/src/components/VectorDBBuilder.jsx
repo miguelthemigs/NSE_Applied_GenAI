@@ -4,6 +4,7 @@ import { apiUrl } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import Icon from './Icon';
 import GateReason from './pipeline/GateReason';
+import ProgressPanel from './pipeline/ProgressPanel';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 
@@ -296,76 +297,7 @@ export default function VectorDBBuilder({ onNavigate }) {
 
       {/* --- BUILDING PROGRESS --- */}
       {loading && (
-        <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
-          <div className="p-8 bg-gray-900 rounded-3xl shadow-2xl relative overflow-hidden ring-1 ring-white/10">
-            {/* Animated Background Gradients */}
-            <div className="absolute -top-24 -left-24 w-48 h-48 bg-fuchsia-500/20 rounded-full blur-3xl"></div>
-            <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-rose-500/20 rounded-full blur-3xl"></div>
-
-            <div className="absolute top-0 left-0 w-full h-1 bg-gray-800">
-              <div 
-                className="h-full bg-gradient-to-r from-fuchsia-500 via-rose-500 to-orange-500 transition-all duration-500 ease-out" 
-                style={{ width: `${progress}%` }}
-              ></div>
-            </div>
-
-            <div className="flex flex-col gap-6 relative z-10">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-white flex items-center gap-3">
-                  <div className="relative flex h-4 w-4">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-fuchsia-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-4 w-4 bg-fuchsia-500"></span>
-                  </div>
-                  {t('state.working')}
-                </h3>
-                <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-400 to-rose-400">
-                  {progress}%
-                </span>
-              </div>
-
-              {/* Active model badge */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-fuchsia-300 bg-fuchsia-500/20 px-2 py-1 rounded-md">{t('common.model')}: {activeModel?.name || selectedModel}</span>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="p-4 bg-black/40 rounded-xl border border-white/5 backdrop-blur-sm">
-                  <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">{t('rerank.status')}</p>
-                  <p className="text-fuchsia-300 font-mono text-sm tracking-tight flex items-center gap-2">
-                    <svg className="w-4 h-4 animate-spin text-fuchsia-500" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    {currentStage ? t('stage.' + currentStage) : t('state.working')}
-                  </p>
-                </div>
-
-                <details className="p-4 bg-black/40 rounded-xl border border-white/5 backdrop-blur-sm min-h-[100px]">
-                  <summary className="text-xs text-gray-400 font-semibold uppercase tracking-wider cursor-pointer">{t('action.details')}</summary>
-                  <div className="mt-2 max-h-40 overflow-y-auto text-gray-300 text-xs font-mono leading-relaxed space-y-1">
-                    {logs.map((line, i) => <div key={i}>{line}</div>)}
-                    {currentDoc && <div className="line-clamp-2">{currentDoc}</div>}
-                  </div>
-                </details>
-              </div>
-
-              {/* Progress Steps Indicator */}
-              <div className="flex items-center gap-2 pt-2">
-                {['load', 'read', 'process', 'save'].map((stepName, i) => {
-                  const stepProgress = (i + 1) * 25;
-                  const isActive = progress >= stepProgress - 15;
-                  return (
-                    <div key={stepName} className="flex-1">
-                      <div className={`h-1.5 rounded-full mb-2 transition-colors duration-500 ${isActive ? 'bg-fuchsia-500' : 'bg-gray-700'}`}></div>
-                      <p className={`text-[10px] uppercase font-bold tracking-wider text-center transition-colors duration-500 ${isActive ? 'text-fuchsia-300' : 'text-gray-600'}`}>{t('stage.' + stepName)}</p>
-                    </div>
-                  );
-                })}
-              </div>
-
-            </div>
-          </div>
-        </div>
+        <ProgressPanel stage={currentStage} progress={progress} logs={currentDoc ? [...logs, currentDoc] : logs} />
       )}
 
       {/* --- RESULT --- */}

@@ -49,6 +49,7 @@
   "tier.download": "One-time download ({size})",
   "download.running": "Downloading the {tier} model: {done} of {total} · about {min} min left",
   "download.unknown": "Downloading the {tier} model… This only happens once.",
+  "progress.eta": "about {min} min left",
   "download.failed": "The download didn't finish. Check the internet connection and try again.",
   "stage.load": "Load model",
   "stage.read": "Read data",
