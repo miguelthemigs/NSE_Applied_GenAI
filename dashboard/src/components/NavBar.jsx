@@ -1,11 +1,14 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useI18n } from '../i18n/I18nProvider.jsx'
+import LanguageToggle from './LanguageToggle.jsx'
 
 export default function NavBar() {
   const location = useLocation()
+  const { t } = useI18n()
 
   const links = [
-    { to: '/', label: 'Overview', icon: 'dashboard' },
-    { to: '/pipeline-demo', label: 'Pipeline', icon: 'sync' },
+    { to: '/', label: t('nav.overview'), icon: 'dashboard' },
+    { to: '/pipeline-demo', label: t('nav.pipeline'), icon: 'sync' },
   ]
 
   return (
@@ -52,6 +55,9 @@ export default function NavBar() {
               </Link>
             )
           })}
+          <div className="ml-2">
+            <LanguageToggle />
+          </div>
         </div>
       </div>
     </nav>
