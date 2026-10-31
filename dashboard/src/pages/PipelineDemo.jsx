@@ -8,8 +8,8 @@ import QueryTab from '../components/QueryTab';
 export default function PipelineDemo() {
   const [activeTab, setActiveTab] = useState('anonymize');
   const [isAnonymized, setIsAnonymized] = useState(false);
-  const [vectorDbReady, setVectorDbReady] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [, setVectorDbReady] = useState(false);
+  const [isProcessing] = useState(false);
 
   // Check backend for existing anonymized CSV / vector DB and enable steps if present
   useEffect(() => {

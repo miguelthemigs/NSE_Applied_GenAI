@@ -40,6 +40,7 @@ export function VectorDBProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useVectorDB() {
   const context = useContext(VectorDBContext);
   if (!context) {
