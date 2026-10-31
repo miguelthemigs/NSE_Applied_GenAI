@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { API_ORIGIN } from './e2e/fixtures/api.js'
 
 const PORT = 5173
 
@@ -12,6 +13,7 @@ export default defineConfig({
     command: `npm run dev -- --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
+    env: { VITE_API_BASE: API_ORIGIN },
   },
   use: {
     baseURL: `http://localhost:${PORT}`,

@@ -1,12 +1,12 @@
 import { test, expect, offline, noHorizontalScroll } from './fixtures/api.js'
 
-test('overview offline: no error-as-theme, no NaN', async ({ page }) => {
+test('overview offline: shows unreachable state, no error-as-theme, no NaN', async ({ page }) => {
   await offline(page)
   await page.goto('/')
-  await expect(page.locator('nav')).toBeVisible()
-  const text = await page.locator('body').innerText()
-  expect(text).not.toMatch(/NaN/)
-  expect(text).not.toMatch(/\berror\b/i)
+  await expect(page.getByText(/niet bereikbaar/)).toBeVisible()
+  const body = page.locator('body')
+  await expect(body).not.toContainText(/NaN/)
+  await expect(body).not.toContainText(/\berror\b/i)
   await noHorizontalScroll(page)
 })
 
