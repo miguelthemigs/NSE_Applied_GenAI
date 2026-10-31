@@ -483,7 +483,7 @@ class StartStreamRouteTests(unittest.TestCase):
     def test_unknown_model_is_a_400(self):
         res = self.client.post("/api/llm-models/start-stream", json={"model_id": "nope"})
         self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.get_json()["code"], "error.model_missing")
+        self.assertEqual(res.get_json()["code"], "error.backend")
 
 
 class VectorBuildDownloadTests(unittest.TestCase):

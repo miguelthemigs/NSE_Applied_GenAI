@@ -4,13 +4,17 @@ import json
 
 from flask import Blueprint, Response, jsonify, request
 
-from src.pipeline import jobs, model_downloads, state
+from src.config.themes import THEMES_LIST
+from src.pipeline import jobs, model_downloads, state, status as pipeline_status
 
 insight_bp = Blueprint("insight", __name__)
 generation = import_module("src.pipeline.04_generation.service")
 retrieval = import_module("src.pipeline.03_retrieval.service")
 settings = import_module("src.config.settings")
 llama_cpp_models = import_module("src.pipeline.04_generation.llama_cpp_models")
+
+# Rough wall-clock cost of one filtered summary on the balanced tier (126 -> 189 min).
+MINUTES_PER_SUMMARY = 1.5
 
 
 # Mapping: filter dimension key (sent by frontend) -> (filter_options bucket, canonical filter key)
@@ -62,7 +66,7 @@ def theme_summary():
         payload = generation.generate_theme_summary(
             theme_name=data.get("theme", ""),
             theme_query=data.get("query", ""),
-            llm_model=data.get("llm_model") or settings.DEFAULT_LLM_MODEL,
+            llm_model=data.get("llm_model") or _running_or_default_model(),
             allow_model_download=bool(data.get("allow_model_download", False)),
             provider=data.get("provider", settings.DEFAULT_LLM_PROVIDER),
             filters=_filters_from_payload(data),
@@ -132,9 +136,7 @@ def _tracked_insights(stream):
 @insight_bp.route("/api/precompute-insights", methods=["POST"])
 def precompute_insights():
     data = request.get_json(silent=True) or {}
-    themes = data.get("themes", [])
-    if not themes:
-        return jsonify({"error": "No themes provided"}), 400
+    themes = data.get("themes") or [{"name": name} for name in THEMES_LIST]
 
     raw_max = data.get("max_documents")
     max_documents = int(raw_max) if raw_max and str(raw_max).isdigit() else None
@@ -187,6 +189,65 @@ def precompute_subthemes():
     )
 
 
+def _valid_combos(grid: list[dict]) -> list[dict]:
+    return retrieval.filter_valid_combos(grid) if grid else []
+
+
+def insight_results(filter_dimensions: list[str]) -> dict:
+    """Summary-coverage rows parsed from the caches. No LLM, no network."""
+    _baseline, counts = pipeline_status._insight_counts()
+    active = (jobs.active_job() or {}).get("step") == "insights"
+
+    main_done, main_total = counts["themes_done"], counts["themes_total"]
+    if main_done >= main_total:
+        main_state = "done"
+    elif active:
+        main_state = "in_progress"
+    else:
+        main_state = "partial" if main_done else "not_started"
+
+    sub_done = counts["subthemes_done"]
+    if active:
+        sub_state = "in_progress"
+    else:
+        sub_state = "done" if sub_done else "not_started"
+
+    filtered_done = counts["filtered_done"]
+    if filter_dimensions:
+        filtered_total = len(_valid_combos(_build_filter_grid(filter_dimensions))) * main_total
+        if filtered_total and filtered_done >= filtered_total:
+            filtered_state = "done"
+        elif active:
+            filtered_state = "in_progress"
+        else:
+            filtered_state = "partial" if filtered_done else "not_started"
+        estimate = {
+            "count": filtered_total,
+            "minutes": round(filtered_total * MINUTES_PER_SUMMARY),
+        }
+    else:
+        filtered_total, filtered_state, estimate = 0, "off", None
+
+    return {
+        "rows": [
+            {"kind": "main", "done": main_done, "total": main_total, "state": main_state},
+            {"kind": "sub", "done": sub_done, "total": None, "state": sub_state},
+            {"kind": "filtered", "done": filtered_done, "total": filtered_total, "state": filtered_state},
+        ],
+        "estimate": estimate,
+    }
+
+
+@insight_bp.route("/api/insights/results", methods=["GET"])
+def insights_results():
+    raw = request.args.get("filter_dimensions", "")
+    dims = [d.strip() for d in raw.split(",") if d.strip()]
+    try:
+        return jsonify(insight_results(dims))
+    except Exception as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 500
+
+
 @insight_bp.route("/api/precompute-preview", methods=["POST"])
 def precompute_preview():
     """Return cross-product size and valid combo count for the given filter dimensions."""
@@ -194,7 +255,7 @@ def precompute_preview():
     raw_dims = data.get("filter_dimensions") or []
     dimension_keys = [str(d) for d in raw_dims if isinstance(d, str)]
     grid = _build_filter_grid(dimension_keys)
-    valid_grid = retrieval.filter_valid_combos(grid) if grid else []
+    valid_grid = _valid_combos(grid)
     options_payload = retrieval.filter_options_payload()
     options = options_payload.get("options") or {}
     sizes = {}
@@ -247,7 +308,8 @@ def start_llm_model_stream():
     try:
         llama_cpp_models.resolve_llama_cpp_model(model_name)
     except ValueError as exc:
-        return jsonify({"status": "error", "code": "error.model_missing", "error": str(exc)}), 400
+        # Unknown id: not "model not downloaded", so not error.model_missing.
+        return jsonify({"status": "error", "code": "error.backend", "error": f"Unknown model id: {model_name}. {exc}"}), 400
     return Response(
         generation.start_llm_stream(model_name, data.get("provider", settings.DEFAULT_LLM_PROVIDER)),
         mimetype="application/x-ndjson",
@@ -294,6 +356,15 @@ def _not_ready_overview(reason: str) -> dict:
         "themes": {},
         "themes_expected": 7,
     }
+
+
+def _running_or_default_model() -> str:
+    """The managed llama-server's current model if one runs, else the default."""
+    try:
+        running = generation.llm_clients.LlamaCppClient.running_managed_model_id()
+    except Exception:
+        running = None
+    return running or settings.DEFAULT_LLM_MODEL
 
 
 def _model_missing(exc: Exception):

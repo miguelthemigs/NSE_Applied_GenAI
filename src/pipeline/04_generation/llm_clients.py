@@ -155,6 +155,10 @@ class LlamaCppClient:
         self._wait_until_server_ready(model_name)
 
     def _restart_llama_server(self, model_name: str) -> None:
+        # Check the new model's files BEFORE stopping a healthy server: an uncached
+        # model must fail fast without killing the one that is running.
+        model = resolve_llama_cpp_model(model_name)
+        model_downloads.require_local(model.repo_id, model.download_patterns)
         self.__class__._stop_managed_server()
         try:
             response = requests.get(f"{self.base_url}/v1/models", timeout=2)
@@ -186,6 +190,25 @@ class LlamaCppClient:
                 f"llama.cpp model check failed with status {response.status_code}: {response.text}"
             )
         return response.json().get("data", [])
+
+    @classmethod
+    def running_managed_model_id(cls) -> str | None:
+        """Id of the model the running managed llama-server serves, else None."""
+        if not cls._has_managed_server():
+            return None
+        try:
+            response = requests.get(f"{cls.base_url}/v1/models", timeout=2)
+            if response.status_code != 200:
+                return None
+            ids = sorted(cls._model_ids(response.json()))
+        except Exception:
+            return None
+        for model_id in ids:
+            try:
+                return resolve_llama_cpp_model(model_id).id
+            except ValueError:
+                continue
+        return None
 
     @classmethod
     def _has_managed_server(cls) -> bool:

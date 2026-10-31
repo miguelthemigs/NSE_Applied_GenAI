@@ -1,5 +1,6 @@
 from importlib import import_module
 import json
+from datetime import datetime, timezone
 
 from src.config.model_tiers import tier_for_model
 from src.config.themes import LOW_INFORMATION_THEME
@@ -57,6 +58,12 @@ def _model_generation_settings(provider: str, llm_model: str) -> dict | None:
     if selected not in {"llama.cpp", "llamacpp", "llama-cpp"}:
         return None
     return llama_cpp_models.resolve_llama_cpp_model(llm_model).generation.to_dict()
+
+
+def _stamped(entry: dict) -> dict:
+    """Add a UTC ISO `generated_at` to a NEW cache entry (old entries read as null)."""
+    entry["generated_at"] = datetime.now(timezone.utc).isoformat()
+    return entry
 
 
 def _normalized_filters(filters: dict | None) -> dict:
@@ -590,7 +597,7 @@ def generate_theme_summary(
             f"{theme_name}."
         )
 
-        cache[cache_key] = response_data
+        cache[cache_key] = _stamped(response_data)
         save_cache(cache)
         print(f"[LLM] Saved summary to cache for: {theme_name}")
 
@@ -806,7 +813,7 @@ def precompute_insights_stream(
                     llm_generation_settings=llm_generation_settings,
                     max_documents=max_documents,
                 )
-                cache[_cache_key(theme_name, filters)] = response_data
+                cache[_cache_key(theme_name, filters)] = _stamped(response_data)
             except Exception as exc:
                 _reraise_model_missing(exc)
                 yield stream_event("progress", stage="process", message=f"Skipped {theme_name}: {str(exc)}", progress=_pct(i + 1), theme=theme_name)
@@ -861,7 +868,7 @@ def precompute_insights_stream(
                             theme_query=subtheme,
                             evidence_ids=manifest.get("evidence_ids") or [],
                         )
-                        subtheme_cache[sub_key] = sub_data
+                        subtheme_cache[sub_key] = _stamped(sub_data)
                         save_subtheme_cache(subtheme_cache)
                     except Exception as exc:
                         _reraise_model_missing(exc)
@@ -921,7 +928,7 @@ def precompute_insights_stream(
                             llm_generation_settings=llm_generation_settings,
                             max_documents=max_documents,
                         )
-                        cache[_cache_key(theme_name, combo)] = response_data
+                        cache[_cache_key(theme_name, combo)] = _stamped(response_data)
                     except Exception as exc:
                         _reraise_model_missing(exc)
                         yield stream_event("progress", stage="process", message=f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
@@ -974,7 +981,7 @@ def precompute_insights_stream(
                                     theme_query=subtheme,
                                     evidence_ids=manifest.get("evidence_ids") or [],
                                 )
-                                subtheme_cache[sub_key] = sub_data
+                                subtheme_cache[sub_key] = _stamped(sub_data)
                                 save_subtheme_cache(subtheme_cache)
                             except Exception as exc:
                                 _reraise_model_missing(exc)
@@ -1088,7 +1095,7 @@ def precompute_subthemes_stream(
                     evidence_ids=evidence_ids,
                     max_documents=max_documents,
                 )
-                subtheme_cache[sub_key] = sub_data
+                subtheme_cache[sub_key] = _stamped(sub_data)
                 save_subtheme_cache(subtheme_cache)
                 quote_count = len(sub_data.get("quotes") or [])
                 main_key = _cache_key(theme_name, combo)
