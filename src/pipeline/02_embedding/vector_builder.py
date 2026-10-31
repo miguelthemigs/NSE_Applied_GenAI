@@ -149,13 +149,7 @@ def _collection_metadata(
 
 
 def _invalidate_insight_cache() -> None:
-    if CACHE_FILE.exists():
-        CACHE_FILE.unlink()
-    try:
-        retrieval = import_module("src.pipeline.03_retrieval.service")
-        retrieval.clear_runtime_caches()
-    except Exception:
-        pass
+    import_module("src.pipeline.04_generation.cache").clear_insight_cache()
 
 
 def _validate_classified_collection(
@@ -662,7 +656,6 @@ def build_vector_db(csv_path="data/anonymized_output.csv", db_path="./survey_vec
                 status=CLASSIFICATION_STATUS_BUILDING,
             ),
         )
-        _invalidate_insight_cache()
 
         for start in range(0, len(df_combined), BATCH_SIZE):
             end = min(start + BATCH_SIZE, len(df_combined))
@@ -853,7 +846,6 @@ def build_vector_db_stream(
                     status=CLASSIFICATION_STATUS_BUILDING,
                 ),
             )
-            _invalidate_insight_cache()
 
         yield json.dumps({"status": "progress", "message": f"Found {total_docs} documents to embed and classify. Starting batched indexing...", "progress": 40}) + "\n"
 

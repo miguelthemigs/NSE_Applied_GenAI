@@ -155,6 +155,11 @@ class ThemeClassificationTests(unittest.TestCase):
                 ),
                 mock.patch.object(vector_builder, "CACHE_FILE", cache_path),
                 mock.patch.object(
+                    import_module("src.pipeline.04_generation.cache"),
+                    "CACHE_FILE",
+                    cache_path,
+                ),
+                mock.patch.object(
                     vector_builder,
                     "load_embedding_model",
                     return_value=first_model,
@@ -189,7 +194,8 @@ class ThemeClassificationTests(unittest.TestCase):
 
             self.assertIsNotNone(first_batch_event)
             self.assertEqual(first_batch_event["progress"], 94)
-            self.assertFalse(cache_path.exists())
+            # An interrupted build must keep the existing summaries.
+            self.assertTrue(cache_path.exists())
             interrupted_collection = chromadb.PersistentClient(
                 path=str(db_path)
             ).get_collection("survey_responses")
@@ -210,6 +216,11 @@ class ThemeClassificationTests(unittest.TestCase):
                     checkpoint_path,
                 ),
                 mock.patch.object(vector_builder, "CACHE_FILE", cache_path),
+                mock.patch.object(
+                    import_module("src.pipeline.04_generation.cache"),
+                    "CACHE_FILE",
+                    cache_path,
+                ),
                 mock.patch.object(
                     vector_builder,
                     "load_embedding_model",
@@ -290,6 +301,11 @@ class ThemeClassificationTests(unittest.TestCase):
             with (
                 mock.patch.object(vector_builder, "VECTOR_CHECKPOINT", checkpoint_path),
                 mock.patch.object(vector_builder, "CACHE_FILE", cache_path),
+                mock.patch.object(
+                    import_module("src.pipeline.04_generation.cache"),
+                    "CACHE_FILE",
+                    cache_path,
+                ),
                 mock.patch.object(
                     vector_builder,
                     "_classification_for_embedding_model",

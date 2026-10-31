@@ -4,7 +4,6 @@ from flask import Blueprint, Response, jsonify, request
 
 vector_bp = Blueprint("vector", __name__)
 embedding = import_module("src.pipeline.02_embedding.service")
-generation = import_module("src.pipeline.04_generation.service")
 retrieval = import_module("src.pipeline.03_retrieval.service")
 
 
@@ -22,7 +21,6 @@ def build_vectors():
             selected_columns=data.get("selected_columns"),
             allow_model_download=bool(data.get("allow_model_download", True)),
         )
-        generation.clear_insight_cache()
         return Response(stream, mimetype="application/x-ndjson")
     except FileNotFoundError as exc:
         return jsonify({"status": "error", "error": str(exc)}), 400
@@ -45,7 +43,6 @@ def rerank_theme_assignments():
                 else None
             ),
         )
-        generation.clear_insight_cache()
         return Response(stream, mimetype="application/x-ndjson")
     except Exception as exc:
         print(f"[RERANK-THEMES ERROR] {str(exc)}")
