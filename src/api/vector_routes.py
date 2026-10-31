@@ -2,9 +2,37 @@ from importlib import import_module
 
 from flask import Blueprint, Response, jsonify, request
 
+from src.pipeline import status as pipeline_status
+
 vector_bp = Blueprint("vector", __name__)
 embedding = import_module("src.pipeline.02_embedding.service")
 retrieval = import_module("src.pipeline.03_retrieval.service")
+
+
+def _anonymize_gate():
+    """409 unless step 1 is `done` (D7).
+
+    Never embed answers whose anonymisation is unverified, still needs review,
+    is running, or does not exist. Fails closed when the status can't be built.
+    """
+    try:
+        anonymize_state = pipeline_status.build_pipeline_status()["steps"]["anonymize"]["state"]
+    except Exception as exc:
+        print(f"[BUILD-VECTORS GATE ERROR] {exc}")
+        anonymize_state = None
+    if anonymize_state == "done":
+        return None
+    return (
+        jsonify(
+            {
+                "status": "error",
+                "code": "error.blocked",
+                "params": {"step": "anonymize"},
+                "error": f"Step 1 (anonymize) is not done (state: {anonymize_state})",
+            }
+        ),
+        409,
+    )
 
 
 @vector_bp.route("/api/status", methods=["GET"])
@@ -14,6 +42,9 @@ def status():
 
 @vector_bp.route("/api/build-vectors", methods=["POST"])
 def build_vectors():
+    blocked = _anonymize_gate()
+    if blocked is not None:
+        return blocked
     try:
         data = request.get_json(silent=True) or {}
         stream = embedding.build_vectors_stream(

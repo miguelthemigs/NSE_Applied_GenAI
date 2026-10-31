@@ -147,6 +147,81 @@ test.describe('done cards and the review gate', () => {
     await expect.poll(() => mockApi.requestsTo('/api/run-anonymize-check', 'POST').length).toBe(1)
   })
 
+  test('needs review while the miss list fails to load: the box stays disabled; retry loads it', async ({ page, mockApi }) => {
+    let reportOk = false
+    await mockApi({
+      ...reviewRoutes({ ack: () => ({ status: 500, json: {} }) }),
+      '/api/anonymize-report': () => (reportOk ? REPORT : { status: 500, json: { error: 'boom' } }),
+    })
+    await page.goto('/pipeline-demo')
+    const p = panel(page)
+    await expect(p.getByRole('alert')).toContainText('De lijst met mogelijke missers kon niet worden geladen.')
+    const box = p.getByRole('checkbox', { name: 'Ik heb de mogelijke missers bekeken' })
+    await expect(box).toBeDisabled()
+    await expect(p.getByText('Geen voorbeelden beschikbaar.')).toHaveCount(0)
+    await expect(p.getByRole('button', { name: 'Verder naar stap 2' })).toBeDisabled()
+    reportOk = true
+    await p.getByRole('button', { name: 'Opnieuw proberen' }).click()
+    await expect(p.getByText(MISS)).toBeVisible()
+    await expect(box).toBeEnabled()
+  })
+
+  test('step 2: a 409 error.blocked from the backend is explained, the status is refreshed, nothing crashes', async ({ page, mockApi }) => {
+    await mockApi({
+      '/api/pipeline/status': statusFixture('anon-done'),
+      '/api/inspect-anonymized': { status: 'success', text_columns: ['Open antwoord'], row_count: 120 },
+      '/api/vector-checkpoint-status': { has_checkpoint: false },
+      'POST /api/build-vectors': { status: 409, json: { status: 'error', code: 'error.blocked', params: { step: 'anonymize' }, error: 'Step 1 (anonymize) is not done (state: needs_review)' } },
+    })
+    await page.goto('/pipeline-demo?step=vectors')
+    const vectors = page.locator('#step-panel-vectors')
+    const statusCalls = () => mockApi.requestsTo('/api/pipeline/status', 'GET').length
+    const start = vectors.getByRole('button', { name: 'Antwoorden doorzoekbaar maken', exact: true })
+    await expect(start).toBeEnabled()
+    const before = statusCalls()
+    await start.click()
+    const alert = vectors.getByRole('alert')
+    await expect(alert).toContainText('Dit kan nog niet: rond eerst stap 1 af (Persoonsgegevens verwijderen).')
+    await expect(alert.getByText(/state: needs_review/)).toBeHidden()
+    await expect.poll(statusCalls).toBeGreaterThanOrEqual(before + 2) // before the start and after the refusal
+    await expect(start).toBeVisible()
+  })
+
+  test('steps 2 to 4: after "Opnieuw uitvoeren", "Resultaten bekijken" goes back to the Done card', async ({ page, mockApi }) => {
+    await mockApi({
+      '/api/pipeline/status': statusFixture('all-done'),
+      '/api/inspect-anonymized': { status: 'success', text_columns: ['Open antwoord'], row_count: 120 },
+      '/api/vector-checkpoint-status': { has_checkpoint: false },
+      '/api/status': { status: 'success' },
+      '/api/cache-status': { main_baseline: 7, main_filtered: 0, subtheme_baseline: 0, subtheme_filtered: 0 },
+    })
+    for (const id of ['vectors', 'rerank', 'insights']) {
+      await page.goto(`/pipeline-demo?step=${id}`)
+      const p = page.locator(`#step-panel-${id}`)
+      await p.getByRole('button', { name: 'Opnieuw uitvoeren' }).click()
+      await p.getByRole('button', { name: 'Resultaten bekijken' }).click()
+      await expect(p.getByRole('button', { name: 'Opnieuw uitvoeren' })).toBeVisible()
+    }
+  })
+
+  test('step 4: a successful run that leaves step 4 partial still confirms it', async ({ page, mockApi }) => {
+    const partial = statusFixture('all-done')
+    partial.steps.insights.state = 'partial'
+    partial.steps.insights.summary.themes_done = 3
+    await mockApi({
+      '/api/pipeline/status': partial,
+      '/api/cache-status': { main_baseline: 3, main_filtered: 0, subtheme_baseline: 0, subtheme_filtered: 0 },
+      '/api/vector-stats': { total_documents: 120 },
+      '/api/filter-options': { status: 'success', options: {} },
+      'POST /api/precompute-insights': { ndjson: [{ status: 'progress', progress: 50, stage: 'process' }, { status: 'success' }] },
+    })
+    await page.goto('/pipeline-demo?step=insights')
+    const p = page.locator('#step-panel-insights')
+    await p.getByRole('button', { name: /Thema's samenvatten/ }).click()
+    await expect(p.getByText("Thema's: klaar")).toBeVisible()
+    await expect(p.getByText('De samenvattingen staan klaar voor het Overzicht.')).toBeVisible()
+  })
+
   test('all done: done cards on steps 2 to 4; step 4 opens the Overview', async ({ page, mockApi }) => {
     await mockApi({
       '/api/pipeline/status': statusFixture('all-done'),
@@ -163,6 +238,9 @@ test.describe('done cards and the review gate', () => {
     const insights = page.locator('#step-panel-insights')
     await expect(insights.getByText("Klaar. Samenvattingen voor 7 van 7 thema's staan op het Overzicht.")).toBeVisible()
     await expect(insights.getByText('Hoofdthema\'s')).toBeVisible()
+    await insights.getByRole('button', { name: 'Stel een vraag' }).click()
+    await expect(page).toHaveURL(/\?step=query$/)
+    await page.goto('/pipeline-demo?step=insights')
     await insights.getByRole('link', { name: 'Bekijk het Overzicht' }).click()
     await expect(page).toHaveURL(/\/$/)
   })

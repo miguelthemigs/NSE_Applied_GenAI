@@ -92,6 +92,11 @@ export default function InsightGenerator({ onNavigate }) {
   const [generating, setGenerating] = useState(false);
   // True while the user sets up a new run (or reads why it stopped) instead of the Done card.
   const [rerunning, setRerunning] = useState(false);
+  // The last run that succeeded ({endpoint, label}); confirmed even when step 4
+  // is still partial afterwards (e.g. only sub-themes were written).
+  const [lastRun, setLastRun] = useState(null);
+  // A run succeeded but the status that shows it could not be loaded.
+  const [statusNotice, setStatusNotice] = useState(false);
 
   // Configuration
   const [selectedModel, setSelectedModel] = useState('unsloth/gemma-4-12B-it-qat-GGUF:UD-Q4_K_XL');
@@ -243,6 +248,8 @@ export default function InsightGenerator({ onNavigate }) {
   const launchPrecompute = async ({ endpoint, useFilterGrid, label }) => {
     setGenerating(true);
     setRerunning(true);
+    setLastRun(null);
+    setStatusNotice(false);
     setCurrentStage('');
     setLogs([{ kind: 'info', text: t('ins.log.start', { label: t(label), model: activeModel?.name || selectedModel }) }]);
     setProgress(0);
@@ -275,6 +282,7 @@ export default function InsightGenerator({ onNavigate }) {
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       let completed = false;
+      let succeeded = false;
       let sawEvent = false;
 
       const handleStreamEvent = (data) => {
@@ -289,12 +297,8 @@ export default function InsightGenerator({ onNavigate }) {
           if (data.message) setLogs(prev => [...prev, { kind: 'info', text: `${prefix}${data.message}` }]);
         } else if (data.status === 'success') {
           completed = true;
-          // The Done card (from the refreshed status) takes over from the progress panel.
-          setProgress(0);
-          setRerunning(false);
-          refreshCacheStatus();
+          succeeded = true;
           if (data.message) setLogs(prev => [...prev, { kind: 'ok', text: data.message }]);
-          setGenerating(false);
         } else if (data.status === 'error') {
           completed = true;
           setLogs(prev => [...prev, { kind: 'error', text: t('ins.log.error', { reason: data.message || data.error || '' }) }]);
@@ -310,8 +314,16 @@ export default function InsightGenerator({ onNavigate }) {
           break;
         }
         setLogs(prev => [...prev, { kind: 'warn', text: t('ins.log.connection', { reason: e.message }) }]);
-      } finally {
-        refresh();
+      }
+      // Keep the panel until the refreshed status shows the result (no blank step).
+      const refreshed = await refresh();
+      if (succeeded) {
+        setProgress(0);
+        setRerunning(false);
+        setLastRun({ endpoint, label });
+        refreshCacheStatus();
+        setGenerating(false);
+        if (!refreshed?.status) setStatusNotice(true);
       }
 
       if (completed || !mountedRef.current) break;
@@ -352,15 +364,42 @@ export default function InsightGenerator({ onNavigate }) {
           stepView={view}
           summary={insights?.summary}
           completedAt={insights?.completed_at}
-          onRunAgain={() => setRerunning(true)}
+          onRunAgain={() => { setLastRun(null); setRerunning(true); }}
+          onContinue={() => onNavigate?.('query')}
         >
           <ResultsPlaceholder summary={insights?.summary} />
         </DoneCard>
       )}
 
+      {statusNotice && !showDone && (
+        <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
+      )}
+
+      {/* A successful run that leaves step 4 partial still gets a confirmation. */}
+      {lastRun && !generating && !showDone && (
+        <div role="status" className="flex items-start gap-3 p-4 rounded-xl bg-success-container text-on-surface">
+          <Icon name="check_circle" filled className="text-[22px] text-success shrink-0" />
+          <div className="min-w-0">
+            <p className="m-0 font-semibold">{t('ins.done.title', { label: t(lastRun.label) })}</p>
+            <p className="m-0 text-sm text-on-surface-variant">{t(lastRun.endpoint === '/api/precompute-subthemes' ? 'ins.done.sub' : 'ins.done.main')}</p>
+          </div>
+        </div>
+      )}
+
       {/* --- CONFIGURATION --- */}
       {!generating && progress === 0 && !showDone && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+          {DONE_CARD_STATES.has(view.state) && (
+            <button
+              type="button"
+              onClick={() => setRerunning(false)}
+              className="inline-flex items-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-primary text-sm font-semibold hover:bg-surface-container-low"
+            >
+              <Icon name="arrow_back" className="text-[18px]" />
+              {t('action.viewResults')}
+            </button>
+          )}
 
           <div className="grid md:grid-cols-2 gap-6">
 

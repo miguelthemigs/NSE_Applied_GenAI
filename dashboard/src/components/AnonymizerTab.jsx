@@ -11,16 +11,35 @@ import { deriveStepView, isMet } from '../utils/stepView';
 import { continueHintKey, DONE_CARD_STATES } from '../utils/doneMessage';
 
 // Step 1 states in which an anonymised file exists on disk.
-const HAS_OUTPUT = DONE_CARD_STATES;
+const HAS_OUTPUT = new Set(['done', 'needs_review', 'unverified', 'stale']);
 const MASK_KEYS = ['NAME', 'LOCATION', 'PII', 'TITLE', 'HEALTH'];
 
 /**
  * The possibly-missed text of the current report, shown inside the Done card's
  * review box. Never collapsed: the user must see it before acknowledging.
+ * listState: 'loading' | 'failed' | 'ready' (the report matching the status).
  */
-function MissedList({ report, review }) {
+function MissedList({ report, review, listState, onRetry }) {
   const { t, formatNumber } = useI18n();
   if (!(Number(review) > 0)) return null;
+  if (listState === 'loading') {
+    return (
+      <p className="m-0 flex items-center gap-2 text-sm text-on-surface-variant">
+        <Icon name="progress_activity" className="text-[18px] motion-safe:animate-spin" />
+        {t('common.loading')}
+      </p>
+    );
+  }
+  if (listState !== 'ready') {
+    return (
+      <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl bg-error-container text-on-error-container px-3 py-2 text-sm">
+        <span className="grow font-medium">{t('done.review.loadFailed')}</span>
+        <button type="button" onClick={onRetry} className="min-h-[44px] px-3 py-2 rounded-xl bg-surface-container-lowest text-primary font-semibold border border-outline-variant hover:bg-surface-container-low">
+          {t('action.retry')}
+        </button>
+      </div>
+    );
+  }
   const keys = MASK_KEYS.filter((k) => (report?.missed_counts?.[k] ?? 0) > 0);
   if (keys.length === 0) return <p className="m-0 text-sm text-on-surface-variant">{t('anon.samples.none')}</p>;
   return (
@@ -102,6 +121,8 @@ export default function AnonymizerTab({ onNavigate }) {
   // True while the user is setting up a new run (or looking at its error)
   // instead of the Done card of the current output.
   const [rerunning, setRerunning] = useState(false);
+  // A run succeeded but the status that shows it could not be loaded.
+  const [statusNotice, setStatusNotice] = useState(false);
   const [blocklist, setBlocklist] = useState([]);
   const [blocklistInput, setBlocklistInput] = useState('');
 
@@ -111,7 +132,6 @@ export default function AnonymizerTab({ onNavigate }) {
   const [currentPreview, setCurrentPreview] = useState('');
   const [lastCheckpointRow, setLastCheckpointRow] = useState(null);
   const [checkpoint, setCheckpoint] = useState(null);
-  const [lastReport, setLastReport] = useState(null);
 
   useEffect(() => {
     fetch(apiUrl('/api/checkpoint-status'))
@@ -125,16 +145,30 @@ export default function AnonymizerTab({ onNavigate }) {
   }, []);
 
   // The report behind the Done card (missed / removed text). Fetched again
-  // whenever the status names a different report, so the list the user
-  // acknowledges is always the one the backend will record the tick for.
+  // whenever the status names a different report (or on retry), so the list
+  // the user acknowledges is always the one the backend records the tick for.
+  const [reportAttempt, setReportAttempt] = useState(0);
+  const reportKey = `${reportId}#${reportAttempt}`;
+  const [reportResult, setReportResult] = useState({ key: null, report: null, failed: false });
   useEffect(() => {
     let cancelled = false;
+    const settle = (report, failed) => { if (!cancelled) setReportResult({ key: reportKey, report, failed }); };
     getJson('/api/anonymize-report')
-      .then(({ data }) => { if (!cancelled) setLastReport(data?.has_report ? data : null); })
-      .catch(() => {});
+      .then(({ ok, data }) => {
+        if (ok && data?.has_report === true) settle(data, false);
+        else settle(null, true);
+      })
+      .catch(() => settle(null, true));
     return () => { cancelled = true; };
-  }, [reportId]);
-  const currentReport = lastReport && (lastReport.timestamp == null || !reportId || lastReport.timestamp === reportId) ? lastReport : null;
+  }, [reportKey]);
+  const lastReport = reportResult.report;
+  const reportMatches = Boolean(lastReport) && (lastReport.timestamp == null || !reportId || lastReport.timestamp === reportId);
+  const listState = reportResult.key !== reportKey ? 'loading' : reportMatches ? 'ready' : 'failed';
+  const currentReport = listState === 'ready' ? lastReport : null;
+  const retryReport = () => {
+    refresh();
+    setReportAttempt((n) => n + 1);
+  };
 
   const saveBlocklist = (updatedWords) => {
     fetch(apiUrl('/api/word-blocklist'), {
@@ -177,9 +211,21 @@ export default function AnonymizerTab({ onNavigate }) {
     setRerunning(true);
   };
 
+  // Keeps the progress panel up until the refreshed status shows the new
+  // result, so the step never goes blank in between; says so if it can't load.
+  const finishRun = async (succeeded) => {
+    const refreshed = await refresh();
+    setLoading(false);
+    if (succeeded) {
+      setRerunning(false);
+      if (!refreshed?.status) setStatusNotice(true);
+    }
+  };
+
   // Re-runs the follow-up check on the existing anonymised file.
   const runCheck = async () => {
     setLoading(true);
+    setStatusNotice(false);
     setRerunning(true);
     setStep(3);
     setResult(null);
@@ -187,6 +233,7 @@ export default function AnonymizerTab({ onNavigate }) {
     setCurrentStage('');
     setLogs([]);
     let sawEvent = false;
+    let succeeded = false;
     try {
       await stream.start('/api/run-anonymize-check', undefined, {
         onEvent: (data) => {
@@ -199,7 +246,7 @@ export default function AnonymizerTab({ onNavigate }) {
             if (data.stage) setCurrentStage(data.stage);
           } else if (data.status === 'success') {
             setProgress(100);
-            setRerunning(false);
+            succeeded = true;
           } else if (data.status === 'error') {
             setResult({ error: data.error });
           }
@@ -208,8 +255,7 @@ export default function AnonymizerTab({ onNavigate }) {
     } catch (err) {
       setResult({ error: err.message });
     } finally {
-      setLoading(false);
-      refresh();
+      await finishRun(succeeded);
     }
   };
 
@@ -308,6 +354,7 @@ export default function AnonymizerTab({ onNavigate }) {
     }
 
     setLoading(true);
+    setStatusNotice(false);
     setRerunning(true);
     setStep(3);
     setResult(null);
@@ -318,6 +365,7 @@ export default function AnonymizerTab({ onNavigate }) {
     setCheckpoint(null);
 
     let sawEvent = false;
+    let succeeded = false;
     try {
       await stream.start('/api/anonymize', {
         selected_columns: cols,
@@ -337,7 +385,7 @@ export default function AnonymizerTab({ onNavigate }) {
             if (data.checkpoint_saved && data.row) setLastCheckpointRow(`${data.column} (${data.row}/${data.total_rows})`);
           } else if (data.status === 'success') {
             setProgress(100);
-            setRerunning(false);
+            succeeded = true;
           } else if (data.status === 'error') {
             setResult({ error: data.error });
           }
@@ -347,12 +395,12 @@ export default function AnonymizerTab({ onNavigate }) {
       setResult({ error: error.message });
       setProgress(0);
     } finally {
-      setLoading(false);
-      refresh();
+      await finishRun(succeeded);
     }
   };
 
-  const showDone = existingAnonymized && !loading && !rerunning;
+  // view.state (not the raw state) so no Done card shows while step 1 runs.
+  const showDone = DONE_CARD_STATES.has(view.state) && !loading && !rerunning;
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 p-3 sm:p-6 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100 transition-all duration-500">
@@ -368,6 +416,10 @@ export default function AnonymizerTab({ onNavigate }) {
         </div>
       </div>
 
+      {statusNotice && !showDone && (
+        <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
+      )}
+
       {showDone ? (
         <DoneCard
           stepId="anonymize"
@@ -377,9 +429,10 @@ export default function AnonymizerTab({ onNavigate }) {
           onContinue={() => onNavigate?.('vectors')}
           onRunAgain={runAgain}
           onRunCheck={runCheck}
+          listReady={listState === 'ready'}
           details={<RemovedDetails report={currentReport} />}
         >
-          <MissedList report={currentReport} review={anon?.summary?.review} />
+          <MissedList report={currentReport} review={anon?.summary?.review} listState={listState} onRetry={retryReport} />
         </DoneCard>
       ) : (
       <div className="relative">

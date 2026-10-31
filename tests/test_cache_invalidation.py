@@ -27,6 +27,14 @@ class CacheInvalidationTests(unittest.TestCase):
         patcher = mock.patch.object(cache, "CACHE_FILE", self.cache_file)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Step 1 is done, so the build gets past the anonymize gate.
+        gate = mock.patch.object(
+            vector_routes.pipeline_status,
+            "build_pipeline_status",
+            return_value={"status": "success", "steps": {"anonymize": {"state": "done"}}},
+        )
+        gate.start()
+        self.addCleanup(gate.stop)
         app = Flask(__name__)
         app.register_blueprint(vector_routes.vector_bp)
         self.client = app.test_client()

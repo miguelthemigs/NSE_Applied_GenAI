@@ -57,11 +57,13 @@ function Tiles({ stepId, summary, completedAt }) {
 
 /**
  * "I have reviewed the possible misses" (D7). The tick is saved server-side for
- * one specific report; Continue unlocks only once the refreshed status says so.
+ * one specific report; Continue unlocks only once the status says so. The box
+ * stays disabled until the list itself has loaded (listReady): nobody can
+ * acknowledge a list they could not see.
  */
-function ReviewGate({ summary, children }) {
+function ReviewGate({ summary, listReady, children }) {
   const { t, formatNumber } = useI18n()
-  const { refresh } = usePipelineStatus()
+  const { refresh, applyStatus } = usePipelineStatus()
   const titleId = useId()
   const [pending, setPending] = useState(false)
   const [notice, setNotice] = useState(null) // null | 'stale' | 'failed'
@@ -83,7 +85,11 @@ function ReviewGate({ summary, children }) {
       await refresh()
       return
     }
-    await refresh()
+    // Use the status the POST returned right away; the refresh then confirms
+    // it. If neither gives a status, say so instead of unticking silently.
+    const applied = applyStatus(res.data)
+    const refreshed = await refresh()
+    if (!applied && !refreshed?.status) setNotice('failed')
     setPending(false)
   }
 
@@ -99,7 +105,7 @@ function ReviewGate({ summary, children }) {
         <input
           type="checkbox"
           checked={acknowledged || pending}
-          disabled={pending || acknowledged}
+          disabled={pending || acknowledged || !listReady}
           onChange={(e) => { if (e.target.checked) acknowledge() }}
           className="w-5 h-5 m-0 accent-primary"
         />
@@ -135,9 +141,12 @@ function StateIcon({ state }) {
  *     acknowledge box, and Continue is disabled until the backend has the tick.
  *   - unverified: warning style, never a success check; offers the check (onRunCheck).
  *   - stale: warning style; continuing is still allowed.
- * Step 4 has no Continue: its primary action opens the Overview.
+ * Step 4 has no Continue: its primary action opens the Overview, and onContinue
+ * becomes the secondary "Ask a question" (step 5).
+ * listReady (anonymize only) must be true before the acknowledge box can be
+ * ticked; it defaults to false so a caller that forgets it fails closed.
  */
-export default function DoneCard({ stepId, stepView, summary, completedAt, onContinue, onRunAgain, onRunCheck, details, children }) {
+export default function DoneCard({ stepId, stepView, summary, completedAt, onContinue, onRunAgain, onRunCheck, listReady = false, details, children }) {
   const { t, formatNumber, formatDate } = useI18n()
   const hintId = useId()
   const state = stepView?.state
@@ -168,7 +177,7 @@ export default function DoneCard({ stepId, stepView, summary, completedAt, onCon
 
       <Tiles stepId={stepId} summary={summary} completedAt={completedAt} />
 
-      {reviewable ? <ReviewGate summary={summary}>{children}</ReviewGate> : children}
+      {reviewable ? <ReviewGate summary={summary} listReady={listReady}>{children}</ReviewGate> : children}
 
       {details}
 
@@ -180,10 +189,18 @@ export default function DoneCard({ stepId, stepView, summary, completedAt, onCon
           </button>
         ) : <span />}
         {stepId === 'insights' ? (
-          <Link to="/" className={primaryButton}>
-            {t('action.openOverview')}
-            <Icon name="arrow_forward" className="text-[18px]" />
-          </Link>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {onContinue && (
+              <button type="button" onClick={onContinue} className={secondaryButton}>
+                <Icon name="question_answer" className="text-[18px]" />
+                {t('step.query')}
+              </button>
+            )}
+            <Link to="/" className={primaryButton}>
+              {t('action.openOverview')}
+              <Icon name="arrow_forward" className="text-[18px]" />
+            </Link>
+          </div>
         ) : next ? (
           <div className="flex flex-wrap items-center justify-end gap-3">
             {gated && hintKey && <span id={hintId} className="text-[13px] text-on-surface-variant">{t(hintKey)}</span>}

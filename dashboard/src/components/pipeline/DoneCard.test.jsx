@@ -23,10 +23,11 @@ function acknowledged(status) {
 
 let server
 function mockBackend(initial, onAck) {
-  server = { status: clone(initial), statusCalls: 0, ackBodies: [] }
+  server = { status: clone(initial), statusCalls: 0, ackBodies: [], statusDown: false }
   fetch.mockImplementation(async (url, init) => {
     if (String(url).endsWith('/api/pipeline/status')) {
       server.statusCalls += 1
+      if (server.statusDown) return jsonResponse({ status: 'error' }, 500)
       return jsonResponse(server.status)
     }
     if (String(url).endsWith('/api/pipeline/acknowledge-review')) {
@@ -38,12 +39,12 @@ function mockBackend(initial, onAck) {
   })
 }
 
-function Harness({ stepId, children, ...props }) {
+function Harness({ stepId, children, listReady = true, ...props }) {
   const { status } = usePipelineStatus()
   if (!status) return null
   const step = status.steps[stepId]
   return (
-    <DoneCard stepId={stepId} stepView={deriveStepView(status, stepId)} summary={step.summary} completedAt={step.completed_at} {...props}>
+    <DoneCard stepId={stepId} stepView={deriveStepView(status, stepId)} summary={step.summary} completedAt={step.completed_at} listReady={listReady} {...props}>
       {children}
     </DoneCard>
   )
@@ -142,6 +143,53 @@ describe('DoneCard: anonymize needs_review (the review gate)', () => {
   })
 })
 
+describe('DoneCard: review gate edge cases', () => {
+  it('the box stays disabled until the miss list has loaded (listReady)', async () => {
+    mockBackend(needsReview, () => jsonResponse({}))
+    renderCard('anonymize', { listReady: false }, <p>loading list</p>)
+    const box = await screen.findByRole('checkbox', { name: 'Ik heb de mogelijke missers bekeken' })
+    expect(box).toBeDisabled()
+    expect(server.ackBodies).toEqual([])
+  })
+
+  it('listReady defaults to false (fails closed)', async () => {
+    mockBackend(needsReview, () => jsonResponse({}))
+    function Bare() {
+      const { status } = usePipelineStatus()
+      if (!status) return null
+      return <DoneCard stepId="anonymize" stepView={deriveStepView(status, 'anonymize')} summary={status.steps.anonymize.summary}>{MISSES}</DoneCard>
+    }
+    render(<I18nProvider><MemoryRouter><PipelineStatusProvider><Bare /></PipelineStatusProvider></MemoryRouter></I18nProvider>)
+    expect(await screen.findByRole('checkbox', { name: 'Ik heb de mogelijke missers bekeken' })).toBeDisabled()
+  })
+
+  it('POST saved but the refresh fails: the status from the POST response unlocks Continue', async () => {
+    mockBackend(needsReview, () => {
+      server.statusDown = true
+      return jsonResponse(acknowledged(needsReview))
+    })
+    renderCard('anonymize', { onContinue: vi.fn() }, MISSES)
+    const box = await screen.findByRole('checkbox', { name: 'Ik heb de mogelijke missers bekeken' })
+    await userEvent.click(box)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Verder naar stap 2' })).toBeEnabled())
+    expect(box).toBeChecked()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('POST answers without a status and the refresh fails: explains it instead of unticking silently', async () => {
+    mockBackend(needsReview, () => {
+      server.statusDown = true
+      return jsonResponse({ ok: true })
+    })
+    renderCard('anonymize', {}, MISSES)
+    const box = await screen.findByRole('checkbox', { name: 'Ik heb de mogelijke missers bekeken' })
+    await userEvent.click(box)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Je vinkje kon niet worden opgeslagen. Probeer het opnieuw.')
+    expect(box).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Verder naar stap 2' })).toBeDisabled()
+  })
+})
+
 describe('DoneCard: other states', () => {
   it('anonymize unverified: warning style, "Niet gecontroleerd", no success check, Continue disabled, check action', async () => {
     mockBackend(unverified, () => jsonResponse({}))
@@ -194,12 +242,18 @@ describe('DoneCard: other states', () => {
     expect(screen.getByRole('button', { name: 'Verder naar stap 4' })).toBeEnabled()
   })
 
-  it('insights: the primary action opens the Overview at /', async () => {
+  it('insights: the primary action opens the Overview at /; "Stel een vraag" is secondary', async () => {
     mockBackend(allDone, () => jsonResponse({}))
-    renderCard('insights', { onRunAgain: vi.fn() }, <p>results placeholder</p>)
+    const onContinue = vi.fn()
+    renderCard('insights', { onRunAgain: vi.fn(), onContinue }, <p>results placeholder</p>)
     const link = await screen.findByRole('link', { name: 'Bekijk het Overzicht' })
     expect(link).toHaveAttribute('href', '/')
+    expect(link).toHaveClass('bg-primary')
     expect(screen.queryByRole('button', { name: /Verder naar stap/ })).toBeNull()
     expect(screen.getByText('results placeholder')).toBeVisible()
+    const ask = screen.getByRole('button', { name: 'Stel een vraag' })
+    expect(ask).not.toHaveClass('bg-primary')
+    await userEvent.click(ask)
+    expect(onContinue).toHaveBeenCalledTimes(1)
   })
 })

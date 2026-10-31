@@ -81,4 +81,15 @@ describe('useNdjsonStream', () => {
     })
     expect(outcome.name).toBe('AbortError')
   })
+
+  it('a non-OK response rejects with its status, code and params', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(
+      JSON.stringify({ status: 'error', code: 'error.blocked', params: { step: 'anonymize' }, error: 'Step 1 is not done' }),
+      { status: 409, headers: { 'content-type': 'application/json' } },
+    ))))
+    const { result } = renderHook(() => useNdjsonStream())
+    let outcome
+    await act(async () => { outcome = await result.current.start('/api/build-vectors', {}).catch((e) => e) })
+    expect(outcome).toMatchObject({ message: 'Step 1 is not done', status: 409, code: 'error.blocked', params: { step: 'anonymize' } })
+  })
 })

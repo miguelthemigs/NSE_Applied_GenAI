@@ -161,6 +161,31 @@ describe('PipelineStatusProvider', () => {
     expect(screen.getByTestId('out')).toHaveTextContent('none|failed')
   })
 
+  it('refresh() resolves with the fetched status; applyStatus() uses a status from another endpoint', async () => {
+    fetch.mockResolvedValue(jsonResponse(fresh))
+    const seen = vi.fn()
+    function Grab({ onContext }) {
+      const value = usePipelineStatus()
+      onContext(value)
+      return <p data-testid="state">{value.status?.steps?.vectors?.state ?? 'none'}</p>
+    }
+    render(<PipelineStatusProvider><Grab onContext={seen} /></PipelineStatusProvider>)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    const ctx = seen.mock.lastCall[0]
+
+    let result
+    await act(async () => { result = await ctx.refresh() })
+    expect(result.status.steps.vectors.state).toBe('blocked')
+
+    fetch.mockResolvedValue(jsonResponse({ status: 'error' }, 500))
+    await act(async () => { result = await ctx.refresh() })
+    expect(result.status).toBeUndefined()
+
+    expect(ctx.applyStatus({ status: 'error' })).toBe(false)
+    act(() => { expect(ctx.applyStatus(allDone)).toBe(true) })
+    expect(screen.getByTestId('state')).toHaveTextContent('done')
+  })
+
   it('throws a clear error outside the provider', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(() => render(<Probe />)).toThrow(/PipelineStatusProvider/)

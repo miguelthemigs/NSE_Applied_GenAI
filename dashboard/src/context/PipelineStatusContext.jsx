@@ -15,6 +15,10 @@ const PipelineStatusContext = createContext(null)
  * after the previous response, so a slow status call never piles up requests.
  * error is null, 'offline' (backend unreachable) or 'failed' (bad response);
  * the last good status is kept when a refresh fails.
+ * refresh() resolves with {status, error}: status is the fetched status or
+ * undefined when the request failed. applyStatus(payload) uses a status that
+ * another endpoint returned (e.g. acknowledge-review); it returns false when
+ * the payload is not a valid status.
  */
 export function PipelineStatusProvider({ children }) {
   const [status, setStatus] = useState(null)
@@ -38,10 +42,20 @@ export function PipelineStatusProvider({ children }) {
       next = { error: e instanceof OfflineError ? 'offline' : 'failed' }
     }
     // Only the newest request may write, so a slow older response can't win.
-    if (!mountedRef.current || seq !== seqRef.current) return
+    if (!mountedRef.current || seq !== seqRef.current) return next
     if (next.status) setStatus(next.status)
     setError(next.error)
     setLoading(false)
+    return next
+  }, [])
+
+  const applyStatus = useCallback((payload) => {
+    if (payload?.status !== 'success' || !payload.steps) return false
+    ++seqRef.current // an older in-flight refresh must not overwrite this
+    setStatus(payload)
+    setError(null)
+    setLoading(false)
+    return true
   }, [])
 
   useEffect(() => {
@@ -66,7 +80,7 @@ export function PipelineStatusProvider({ children }) {
     }
   }, [pollMs, refresh])
 
-  const value = useMemo(() => ({ status, loading, error, refresh }), [status, loading, error, refresh])
+  const value = useMemo(() => ({ status, loading, error, refresh, applyStatus }), [status, loading, error, refresh, applyStatus])
   return <PipelineStatusContext.Provider value={value}>{children}</PipelineStatusContext.Provider>
 }
 

@@ -9,6 +9,9 @@ import DoneCard from './pipeline/DoneCard';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
 import { DONE_CARD_STATES } from '../utils/doneMessage';
+import { PIPELINE_STEPS } from '../config/pipelineSteps';
+
+const STEP_N = Object.fromEntries(PIPELINE_STEPS.map((s) => [s.id, s.n]));
 
 const AVAILABLE_MODELS = [
   {
@@ -41,6 +44,8 @@ export default function VectorDBBuilder({ onNavigate }) {
   const [loading, setLoading] = useState(false);
   // True while the user sets up a new build (or reads its error) instead of the Done card.
   const [rerunning, setRerunning] = useState(false);
+  // A build succeeded but the status that shows it could not be loaded.
+  const [statusNotice, setStatusNotice] = useState(false);
   const [result, setResult] = useState(null);
   const [progress, setProgress] = useState(0);
   const [currentStage, setCurrentStage] = useState('');
@@ -102,6 +107,7 @@ export default function VectorDBBuilder({ onNavigate }) {
 
     setLoading(true);
     setRerunning(true);
+    setStatusNotice(false);
     setProgress(0);
     setCurrentStage('');
     setLogs([]);
@@ -110,7 +116,10 @@ export default function VectorDBBuilder({ onNavigate }) {
     setVectorCheckpoint(null);
 
     let sawEvent = false;
+    let succeeded = false;
     try {
+      // Start from the current status; the backend refuses (409) anyway when step 1 is not done.
+      await refresh();
       await stream.start('/api/build-vectors', {
         embedding_model: model,
         selected_columns: cols,
@@ -129,7 +138,7 @@ export default function VectorDBBuilder({ onNavigate }) {
           } else if (data.status === 'success') {
             setProgress(100);
             setCurrentStage('save');
-            setRerunning(false);
+            succeeded = true;
           } else if (data.status === 'error') {
             setResult({ error: data.error });
             if (data.error) setLogs(prev => [...prev, data.error]);
@@ -137,11 +146,21 @@ export default function VectorDBBuilder({ onNavigate }) {
         }
       });
     } catch (error) {
-      setResult({ error: error.message });
-      setLogs(prev => [...prev, error.message]);
+      if (error?.code === 'error.blocked') {
+        const step = error.params?.step ?? 'anonymize';
+        setResult({ error: error.message, message: t('error.blocked', { n: STEP_N[step] ?? 1, name: t('step.' + step) }) });
+      } else {
+        setResult({ error: error.message });
+        setLogs(prev => [...prev, error.message]);
+      }
     } finally {
+      // Keep the panel until the refreshed status shows the result (no blank step).
+      const refreshed = await refresh();
       setLoading(false);
-      refresh();
+      if (succeeded) {
+        setRerunning(false);
+        if (!refreshed?.status) setStatusNotice(true);
+      }
     }
   };
 
@@ -173,12 +192,16 @@ export default function VectorDBBuilder({ onNavigate }) {
         />
       )}
 
+      {statusNotice && !showDone && (
+        <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
+      )}
+
       {/* --- ERROR --- */}
-      {result?.error && !loading && (
+      {result?.error && !loading && !showDone && (
         <div role="alert" className="p-5 rounded-2xl bg-error-container text-on-error-container flex items-start gap-3">
           <Icon name="error" className="text-2xl shrink-0" />
           <div className="min-w-0">
-            <p className="m-0 font-bold">{t('state.error')}</p>
+            <p className="m-0 font-bold">{result.message ?? t('state.error')}</p>
             <details className="mt-1 text-sm">
               <summary className="cursor-pointer">{t('action.details')}</summary>
               <p className="mt-1 break-words">{result.error}</p>
@@ -190,6 +213,17 @@ export default function VectorDBBuilder({ onNavigate }) {
       {/* --- CONFIGURATION PANEL --- */}
       {!loading && !showDone && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+
+          {DONE_CARD_STATES.has(view.state) && (
+            <button
+              type="button"
+              onClick={() => { setResult(null); setRerunning(false); }}
+              className="inline-flex items-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-primary text-sm font-semibold hover:bg-surface-container-low"
+            >
+              <Icon name="arrow_back" className="text-[18px]" />
+              {t('action.viewResults')}
+            </button>
+          )}
 
           {vectorCheckpoint && (
             <div className="p-5 bg-amber-50 border-2 border-amber-300 rounded-2xl shadow-md">

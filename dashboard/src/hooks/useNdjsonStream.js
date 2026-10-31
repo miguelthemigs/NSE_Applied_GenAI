@@ -4,7 +4,9 @@ import { apiUrl, OfflineError, readNdjson } from '../services/api'
 /**
  * POST to an NDJSON endpoint and track the events as they arrive.
  * start(path, body, {onEvent}) resolves with the last event (or null).
- * It rejects on network failure, a non-OK response (message from the JSON body), or cancellation (AbortError).
+ * It rejects on network failure, a non-OK response (message from the JSON body; the
+ * error also carries the HTTP `status` and the body's `code` / `params`), or
+ * cancellation (AbortError).
  */
 export function useNdjsonStream() {
   const [events, setEvents] = useState([])
@@ -51,13 +53,18 @@ export function useNdjsonStream() {
       }
       if (!response.ok) {
         let message = `Request failed with HTTP ${response.status}`
+        let data = null
         try {
-          const data = await response.json()
+          data = await response.json()
           message = data.message || data.error || message
         } catch {
           // body was not JSON; keep the generic message
         }
-        throw new Error(message)
+        const err = new Error(message)
+        err.status = response.status
+        err.code = data?.code ?? null
+        err.params = data?.params ?? null
+        throw err
       }
       await readNdjson(response, (evt) => {
         lastEvent = evt

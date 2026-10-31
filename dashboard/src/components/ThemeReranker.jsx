@@ -4,6 +4,7 @@ import { apiUrl, postJson } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import GateReason from './pipeline/GateReason';
 import ProgressPanel from './pipeline/ProgressPanel';
+import Icon from './Icon';
 import DoneCard from './pipeline/DoneCard';
 import { usePipelineStatus } from '../context/PipelineStatusContext';
 import { deriveStepView } from '../utils/stepView';
@@ -21,6 +22,8 @@ export default function ThemeReranker({ onNavigate }) {
   const [status, setStatus] = useState(null);
   // True while the user sets up a new run (or reads its error) instead of the Done card.
   const [rerunning, setRerunning] = useState(false);
+  // A run succeeded but the status that shows it could not be loaded.
+  const [statusNotice, setStatusNotice] = useState(false);
   const [skipping, setSkipping] = useState(false);
   const [skipError, setSkipError] = useState(null);
   const [rerankerModel, setRerankerModel] = useState(DEFAULT_RERANKER);
@@ -64,12 +67,14 @@ export default function ThemeReranker({ onNavigate }) {
   const handleRerank = async () => {
     setLoading(true);
     setRerunning(true);
+    setStatusNotice(false);
     setProgress(0);
     setCurrentStage('');
     setLogs([]);
     setResult(null);
 
     let sawEvent = false;
+    let succeeded = false;
     try {
       const payload = {
         reranker_model: rerankerModel.trim() || DEFAULT_RERANKER,
@@ -92,7 +97,7 @@ export default function ThemeReranker({ onNavigate }) {
           } else if (data.status === 'success') {
             setProgress(100);
             setCurrentStage('save');
-            setRerunning(false);
+            succeeded = true;
           } else if (data.status === 'error') {
             setResult({ error: data.error });
           }
@@ -101,8 +106,13 @@ export default function ThemeReranker({ onNavigate }) {
     } catch (error) {
       setResult({ error: error.message });
     } finally {
+      // Keep the panel until the refreshed status shows the result (no blank step).
+      const refreshed = await refresh();
       setLoading(false);
-      refresh();
+      if (succeeded) {
+        setRerunning(false);
+        if (!refreshed?.status) setStatusNotice(true);
+      }
     }
   };
 
@@ -135,7 +145,11 @@ export default function ThemeReranker({ onNavigate }) {
         />
       )}
 
-      {result?.error && !loading && (
+      {statusNotice && !showDone && (
+        <p role="alert" className="m-0 rounded-xl bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
+      )}
+
+      {result?.error && !loading && !showDone && (
         <div role="alert" className="p-5 rounded-2xl bg-error-container text-on-error-container">
           <p className="m-0 font-bold">{t('rerank.failed')}</p>
           <details className="mt-1 text-sm">
@@ -147,6 +161,16 @@ export default function ThemeReranker({ onNavigate }) {
 
       {!loading && !showDone && (
         <div className="space-y-6">
+          {DONE_CARD_STATES.has(view.state) && (
+            <button
+              type="button"
+              onClick={() => { setResult(null); setRerunning(false); }}
+              className="inline-flex items-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-primary text-sm font-semibold hover:bg-surface-container-low"
+            >
+              <Icon name="arrow_back" className="text-[18px]" />
+              {t('action.viewResults')}
+            </button>
+          )}
           {vectorReady && (
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('rerank.status')}</p>

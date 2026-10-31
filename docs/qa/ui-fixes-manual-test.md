@@ -41,7 +41,8 @@ If the first pass catches every name, simulate the miss. Stop the backend. In `d
 | # | Action | Expected |
 |---|---|---|
 | 3.1 | Run step 1 with the follow-up check switched **off**. | The Done card is amber, with "Niet gecontroleerd" and "De controle achteraf is overgeslagen …". There is no green check and no "Alles in orde" anywhere on the card. The stepper shows step 1 in amber. |
-| 3.2 | Look at "Verder naar stap 2" and at step 2. | Continue is disabled ("Voer eerst de controle uit."). Step 2's main button is disabled, with "Doe eerst stap 1: …". `GET /api/pipeline/status` reports step 2 as `blocked`. |
+| 3.2 | Look at "Verder naar stap 2" and at step 2. | Continue is disabled ("Voer eerst de controle uit."). Step 2's main button is disabled, with "Doe eerst stap 1: …". `GET /api/pipeline/status` reports step 2 as `blocked`. `curl -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:5001/api/build-vectors` answers 409 with `code: "error.blocked"` (the same applies while step 1 needs review). |
+| 3.2b | While step 1 needs review (section 2), block the request URL `/api/anonymize-report` in Chrome DevTools (Network → right-click → Block request URL) and reload. | The review box shows "De lijst met mogelijke missers kon niet worden geladen." with "Opnieuw proberen". The acknowledge box stays disabled until the list loads. |
 | 3.3 | Click "Controle nu uitvoeren". | The progress panel runs the check. The card then shows the checked result: green (no misses) or the review box (misses). |
 
 ## 4. Re-run step 1: downstream steps become stale
