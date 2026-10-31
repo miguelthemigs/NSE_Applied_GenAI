@@ -208,7 +208,7 @@ export default function InsightGenerator({ onComplete }) {
       const clearEndpoint = endpoint === '/api/precompute-subthemes'
         ? '/api/clear-subtheme-cache'
         : '/api/clear-cache';
-            setLogs(prev => [...prev, { kind: 'info', text: t('ins.log.clearing') }]);
+      setLogs(prev => [...prev, { kind: 'info', text: t('ins.log.clearing') }]);
       try {
         await fetch(apiUrl(clearEndpoint), { method: 'POST' });
         setLogs(prev => [...prev, { kind: 'ok', text: t('ins.log.cleared') }]);
@@ -389,6 +389,7 @@ export default function InsightGenerator({ onComplete }) {
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-gray-700">{t('ins.filtered.title')}</p>
                   </div>
+                  <p className="text-xs text-gray-500">{t('ins.filtered.hint')}</p>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { key: 'academic_year' },
@@ -490,7 +491,7 @@ export default function InsightGenerator({ onComplete }) {
                   <Icon name="arrow_forward" className="text-base" />
                 </div>
                 <div className="flex items-center justify-between mt-0.5">
-                  <span className="text-xs font-normal text-white/80">{t('ins.btn.main.lead')}</span>
+                  <span className="text-xs font-normal text-white/80">{t('ins.btn.main.lead', { n: THEME_COUNT })}</span>
                   <CacheBadge cached={cacheStatus.main_baseline} total={THEME_COUNT} />
                 </div>
               </button>
@@ -520,7 +521,7 @@ export default function InsightGenerator({ onComplete }) {
                 </div>
                 <div className="flex items-center justify-between mt-0.5">
                   <span className="text-xs font-normal text-white/80">
-                    {filterDimensions.length > 0 ? t('ins.btn.filtered.lead', { n: displayCombos }) : t('ins.btn.selectFirst')}
+                    {filterDimensions.length > 0 ? t('ins.btn.filtered.lead', { n: displayCombos, themes: THEME_COUNT }) : t('ins.btn.selectFirst')}
                   </span>
                   <CacheBadge cached={cacheStatus.main_filtered} total={filterDimensions.length > 0 ? extraThemeInsights : undefined} />
                 </div>

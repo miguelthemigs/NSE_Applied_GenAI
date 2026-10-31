@@ -132,3 +132,97 @@ test.describe('overview and pipeline copy', () => {
     await expectCleanCopy(page)
   })
 })
+
+// ---- Every pipeline step and the routed detail/compare screens, NL and EN ----
+
+const STEP_ROUTES = {
+  ...PIPELINE_ROUTES,
+  '/api/inspect-anonymized': { status: 'success', text_columns: ['Open antwoord'], row_count: 120 },
+  '/api/vector-checkpoint-status': { has_checkpoint: true, processed_count: 40, total_docs: 120, embedding_model: 'Octen/Octen-Embedding-0.6B', selected_columns: ['Open antwoord'] },
+  '/api/cache-status': { main_baseline: 7, main_filtered: 0, subtheme_baseline: 3, subtheme_filtered: 0 },
+  '/api/vector-stats': { total_documents: 120 },
+  '/api/filter-options': { status: 'success', options: { institutions: ['Fontys'], academic_years: ['2024'], locations: ['Eindhoven'], programmes: ['ICT'], study_modes: ['Voltijd'], cohorts: ['2023'], languages: ['Nederlands'] } },
+}
+
+const STEP_TABS = [
+  ['1', 'Persoonsgegevens verwijderen', 'Remove personal details'],
+  ['2', 'Antwoorden doorzoekbaar maken', 'Prepare answers for search'],
+  ['3', "Thema's controleren", 'Double-check themes'],
+  ['4', 'Samenvattingen schrijven', 'Write summaries'],
+  ['5', 'Stel een vraag', 'Ask a question'],
+]
+
+test.describe('render coverage', () => {
+  // Task 9 adds ?step=; until then the tab is clicked.
+  test('every pipeline step is clean in NL and EN', async ({ page, mockApi }) => {
+    await mockApi({ ...STEP_ROUTES, '/api/status': { status: 'success', anonymized_exists: true, vector_db_exists: true, vector_db_ready: true, theme_reranker_status: 'ready' } })
+    await page.goto('/pipeline-demo')
+    for (const lang of ['nl', 'en']) {
+      if (lang === 'en') await switchTo(page, 'en')
+      for (const [n, nl, en] of STEP_TABS) {
+        const tab = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: `${n}. ${lang === 'nl' ? nl : en}` })
+        await tab.click()
+        await expect(tab).toHaveClass(/border-blue-600/)
+        await expectCleanCopy(page)
+      }
+    }
+  })
+
+  const THEME_PAYLOAD = {
+    status: 'success',
+    summary: 'Fixture summary',
+    subthemes: ['Planning'],
+    subtheme_mentions: [{ subtheme: 'Planning', mentions: 4, percentage: 100 }],
+    quotes: ['Fixture quote about planning', 'Another planning comment'],
+    student_suggestions: ['Plan the schedule earlier'],
+    positive_comments: ['Planning works well'],
+    critical_comments: ['Schedule changes too late'],
+  }
+
+  test('theme detail page is clean and translated in NL and EN', async ({ page, mockApi }) => {
+    await mockApi({ ...STEP_ROUTES, '/api/theme-summary': THEME_PAYLOAD })
+    await page.goto('/thema/content_org')
+    await expect(page.getByRole('heading', { level: 1, name: 'Inhoud en organisatie' })).toBeVisible()
+    await expect(page.getByText('Curriculum en planning')).toBeVisible()
+    await expect(page.getByRole('button', { name: /echte reacties lezen/ }).first()).toBeVisible()
+    await expectCleanCopy(page)
+    await switchTo(page, 'en')
+    await expect(page.getByRole('heading', { level: 1, name: 'Content and organisation' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Read \d+ real comments/ }).first()).toBeVisible()
+    await expectCleanCopy(page)
+  })
+
+  test('sub-theme page is clean in NL and EN', async ({ page, mockApi }) => {
+    await mockApi({ ...STEP_ROUTES, '/api/theme-summary': THEME_PAYLOAD })
+    await page.goto('/thema/content_org/subtheme/Planning')
+    await expect(page.getByRole('heading', { level: 1, name: 'Planning' })).toBeVisible()
+    await expect(page.getByText('Subthema van Inhoud en organisatie')).toBeVisible()
+    await expectCleanCopy(page)
+    await switchTo(page, 'en')
+    await expect(page.getByText('Sub-theme of Content and organisation')).toBeVisible()
+    await expectCleanCopy(page)
+  })
+
+  test('compare page is clean in NL and EN', async ({ page, mockApi }) => {
+    await mockApi(STEP_ROUTES)
+    await page.route('**/health', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }))
+    await page.route('**/api/v1/compare/**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { group: 'Software Engineering', top_themes: [['Teachers', 5]], total_responses: 5 },
+          { group: 'Cyber Security', top_themes: [], total_responses: 1 },
+        ]),
+      }),
+    )
+    await page.goto('/vergelijken')
+    await expect(page.getByRole('heading', { level: 1, name: 'Vergelijking' })).toBeVisible()
+    await expect(page.getByText('Docenten (5)')).toBeVisible()
+    await expectCleanCopy(page)
+    await switchTo(page, 'en')
+    await expect(page.getByRole('heading', { level: 1, name: 'Comparison' })).toBeVisible()
+    await expect(page.getByText('Teachers (5)')).toBeVisible()
+    await expectCleanCopy(page)
+  })
+})

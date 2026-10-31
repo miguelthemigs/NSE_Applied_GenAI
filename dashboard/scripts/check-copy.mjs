@@ -8,8 +8,7 @@ import { BANNED } from './banned-copy.mjs'
 
 const ROOT = process.cwd()
 const SCAN_DIRS = ['src/components', 'src/pages']
-// Copyright and registered signs are Extended_Pictographic but are not emoji.
-const EMOJI = /(?![\u00A9\u00AE])\p{Extended_Pictographic}/u
+const EMOJI = /\p{Extended_Pictographic}/u
 const GLYPHS = ['\u2713', '\u00D7']
 
 function walk(dir) {

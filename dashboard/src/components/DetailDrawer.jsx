@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useThemeSummary } from '../hooks/useThemeSummary'
+import { useI18n } from '../i18n/I18nProvider'
 
 // Removed static DonutChart as per user request
 
 export default function DetailDrawer({ theme, onClose }) {
+  const { t } = useI18n()
   const drawerRef = useRef(null)
   const { liveData, loadingLive } = useThemeSummary(theme)
 
@@ -74,7 +76,11 @@ export default function DetailDrawer({ theme, onClose }) {
             </div>
           ) : liveData?.error ? (
             <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">
-              {liveData.error}
+              <p>{t('detail.queryFailed')}</p>
+              <details>
+                <summary className="cursor-pointer">{t('action.details')}</summary>
+                <p className="mt-1 break-words">{liveData.error}</p>
+              </details>
             </div>
           ) : liveData ? (
             <div className="space-y-4 animate-in fade-in duration-500">
@@ -83,7 +89,7 @@ export default function DetailDrawer({ theme, onClose }) {
               </p>
             </div>
           ) : (
-            <p className="text-xs text-blue-600/70 italic">Vector database query failed or offline.</p>
+            <p className="text-xs text-blue-600/70 italic">{t('detail.queryFailed')}</p>
           )}
         </div>
 

@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { PROGRAMMES, COMPARISON_DATA, COMPARISON_LABELS } from '../data/themes'
 import { useApiData } from '../hooks/useApiData'
+import { useI18n } from '../i18n/I18nProvider'
+import { themeLabel } from '../constants/realThemes'
+import Icon from '../components/Icon'
 
 const THEME_KEYS = Object.keys(COMPARISON_LABELS)
 
@@ -55,6 +58,7 @@ function MirroredRow({ label, valueA, valueB, maxVal = 5 }) {
 
 // ── Live pipeline section ─────────────────────────────────────────────────────
 function LiveCompareSection({ compare }) {
+  const { t, formatNumber } = useI18n()
   if (!compare || compare.length === 0) return null
 
   return (
@@ -67,10 +71,10 @@ function LiveCompareSection({ compare }) {
           hub
         </span>
         <h2 className="text-base font-bold font-headline text-primary">
-          Live Pipeline — Top Themes by Programme
+          {t('compare.live.title')}
         </h2>
         <span className="ml-auto text-xs font-medium text-tertiary-container bg-tertiary-container/10 px-2 py-0.5 rounded-full">
-          Live
+          {t('compare.live')}
         </span>
       </div>
 
@@ -79,29 +83,29 @@ function LiveCompareSection({ compare }) {
         {compare.map((row) => (
           <div key={row.group} className="bg-surface-container-low rounded-xl p-4">
             <p className="text-xs font-bold text-primary mb-2 truncate">{row.group}</p>
-            <p className="text-[10px] text-on-surface-variant mb-2 uppercase tracking-wider">Top themes</p>
+            <p className="text-[10px] text-on-surface-variant mb-2 uppercase tracking-wider">{t('compare.topThemes')}</p>
             <div className="flex flex-wrap gap-1.5">
               {(row.top_themes ?? []).slice(0, 5).map(([theme, count]) => (
                 <span
                   key={theme}
                   className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium"
                 >
-                  {theme} ({count})
+                  {themeLabel(t, theme)} ({count})
                 </span>
               ))}
               {(!row.top_themes || row.top_themes.length === 0) && (
-                <span className="text-[10px] text-on-surface-variant italic">No data yet</span>
+                <span className="text-[10px] text-on-surface-variant italic">{t('compare.noData')}</span>
               )}
             </div>
             <p className="text-[10px] text-on-surface-variant/60 mt-2">
-              {row.total_responses} response{row.total_responses !== 1 ? 's' : ''}
+              {t('compare.responses', { n: formatNumber(row.total_responses ?? 0) })}
             </p>
           </div>
         ))}
       </div>
 
       <p className="text-[10px] text-on-surface-variant/40 mt-4">
-        Source: NSE pipeline database · {new Date().toLocaleTimeString()}
+        {t('compare.source', { time: new Date().toLocaleTimeString() })}
       </p>
     </div>
   )
@@ -109,6 +113,7 @@ function LiveCompareSection({ compare }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Vergelijken() {
+  const { t } = useI18n()
   const [selA, setSelA] = useState('se')
   const [selB, setSelB] = useState('cs')
 
@@ -135,15 +140,15 @@ export default function Vergelijken() {
         {/* Sidebar */}
         <aside className="w-full md:w-72 md:fixed md:right-0 md:top-16 md:h-[calc(100vh-4rem)] bg-surface-container-lowest/85 glass-panel shadow-editorial flex flex-col p-5 gap-4 order-first md:order-last overflow-y-auto">
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-widest text-primary mb-1">Filters</h3>
-            <p className="text-xs text-on-surface-variant">Refine your insights</p>
+            <h3 className="text-xs font-bold uppercase tracking-widest text-primary mb-1">{t('compare.filters')}</h3>
+            <p className="text-xs text-on-surface-variant">{t('compare.filters.lead')}</p>
           </div>
           {[
-            { icon: 'calendar_today', label: 'Academic Year' },
-            { icon: 'location_on', label: 'Location' },
-            { icon: 'school', label: 'Programme' },
-            { icon: 'history_edu', label: 'Study Mode' },
-            { icon: 'group', label: 'Cohort' },
+            { icon: 'calendar_today', label: t('overview.f.year') },
+            { icon: 'location_on', label: t('overview.f.location') },
+            { icon: 'school', label: t('overview.f.programme') },
+            { icon: 'history_edu', label: t('overview.f.studyMode') },
+            { icon: 'group', label: t('query.f.cohort') },
           ].map((f, i) => (
             <button
               key={f.label}
@@ -161,24 +166,23 @@ export default function Vergelijken() {
           {/* Data source indicator */}
           <div className="mt-auto bg-surface-container-low p-4 rounded-xl">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-on-surface-variant uppercase">Data Source</span>
+              <span className="text-xs font-bold text-on-surface-variant uppercase">{t('compare.source.title')}</span>
               {loading ? (
                 <span className="w-2 h-2 rounded-full bg-outline/50 animate-pulse" />
               ) : isLive ? (
                 <span className="flex items-center gap-1 text-[10px] font-bold text-tertiary-container">
                   <span className="w-1.5 h-1.5 rounded-full bg-tertiary-container animate-pulse" />
-                  Live
+                  {t('compare.live')}
                 </span>
               ) : (
                 <span className="flex items-center gap-1 text-[10px] text-on-surface-variant/50">
                   <span className="w-1.5 h-1.5 rounded-full bg-outline/40" />
-                  Demo
+                  {t('compare.demo')}
                 </span>
               )}
             </div>
             <p className="text-[10px] text-on-surface-variant leading-relaxed">
-              Results are based on the National Student Survey (NSE) results from
-              Fontys University of Applied Sciences.
+              {t('compare.source.body')}
             </p>
           </div>
         </aside>
@@ -188,11 +192,10 @@ export default function Vergelijken() {
           {/* Header */}
           <div className="mb-8 md:mb-16">
             <h1 className="text-2xl md:text-4xl font-extrabold tracking-tight font-headline text-primary mb-2">
-              Comparative Analysis
+              {t('compare.title')}
             </h1>
             <p className="text-on-surface-variant max-w-2xl font-body">
-              Direct comparison of student satisfaction between two programmes based on the
-              key NSE themes.
+              {t('compare.lead')}
             </p>
           </div>
 
@@ -200,7 +203,7 @@ export default function Vergelijken() {
           <div className="grid grid-cols-1 md:grid-cols-11 gap-3 md:gap-4 mb-8 md:mb-12 items-center">
             <div className="md:col-span-5 bg-surface-container-lowest p-5 rounded-xl shadow-editorial">
               <label className="text-[10px] uppercase font-bold text-secondary mb-2 block">
-                Selection A
+                {t('compare.selectionA')}
               </label>
               <select
                 value={selA}
@@ -221,13 +224,13 @@ export default function Vergelijken() {
                 className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white"
                 style={{ background: 'linear-gradient(135deg, #002F59, #00467F)' }}
               >
-                VS
+                {t('compare.vs')}
               </div>
             </div>
 
             <div className="md:col-span-5 md:text-right bg-surface-container-lowest p-5 rounded-xl shadow-editorial">
               <label className="text-[10px] uppercase font-bold text-secondary mb-2 block">
-                Selection B
+                {t('compare.selectionB')}
               </label>
               <select
                 value={selB}
@@ -250,13 +253,13 @@ export default function Vergelijken() {
               <div className="flex items-center gap-2">
                 <span className="w-3 h-3 rounded-full bg-primary" />
                 <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
-                  Satisfaction Score (1–5)
+                  {t('compare.score')}
                 </span>
               </div>
-              <span className="text-sm font-headline font-bold text-primary">Top NSE Themes</span>
+              <span className="text-sm font-headline font-bold text-primary">{t('compare.topNse')}</span>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
-                  Satisfaction Score (1–5)
+                  {t('compare.score')}
                 </span>
                 <span className="w-3 h-3 rounded-full bg-secondary" />
               </div>
@@ -266,7 +269,7 @@ export default function Vergelijken() {
               {sortedKeys.map((key) => (
                 <MirroredRow
                   key={key}
-                  label={COMPARISON_LABELS[key]}
+                  label={t('compare.label.' + key)}
                   valueA={dataA[key]}
                   valueB={dataB[key]}
                 />
@@ -274,9 +277,9 @@ export default function Vergelijken() {
             </div>
 
             <div className="mt-8 flex justify-between text-[10px] font-medium text-on-surface-variant/50 uppercase tracking-widest border-t border-outline-variant/10 pt-4">
-              <span>n={progA?.respondents} respondents</span>
-              <span>Demo data</span>
-              <span>n={progB?.respondents} respondents</span>
+              <span>{t('compare.respondents', { n: progA?.respondents })}</span>
+              <span>{t('compare.demoData')}</span>
+              <span>{t('compare.respondents', { n: progB?.respondents })}</span>
             </div>
           </div>
 
@@ -285,17 +288,20 @@ export default function Vergelijken() {
             <div className="bg-surface-container-lowest p-8 rounded-2xl shadow-editorial">
               <div className="flex items-center gap-3 mb-4">
                 <span className="material-symbols-outlined text-tertiary-container">trending_up</span>
-                <h3 className="font-headline font-bold text-lg text-primary">Biggest Difference</h3>
+                <h3 className="font-headline font-bold text-lg text-primary">{t('compare.biggest.title')}</h3>
               </div>
               <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
-                The most significant difference is visible in{' '}
-                <strong>{COMPARISON_LABELS[biggestDiffKey]}</strong>. {progA?.name} scores{' '}
-                <strong>{dataA[biggestDiffKey].toFixed(1)}</strong> versus{' '}
-                <strong>{dataB[biggestDiffKey].toFixed(1)}</strong> for {progB?.name}.
+                {t('compare.biggest.body', {
+                  label: t('compare.label.' + biggestDiffKey),
+                  a: progA?.name,
+                  scoreA: dataA[biggestDiffKey].toFixed(1),
+                  b: progB?.name,
+                  scoreB: dataB[biggestDiffKey].toFixed(1),
+                })}
               </p>
               <div className="flex items-center gap-2 text-xs font-bold text-primary cursor-pointer hover:underline">
-                <span>VIEW DETAILED REPORT</span>
-                <span className="material-symbols-outlined text-xs">arrow_forward</span>
+                <span>{t('compare.report')}</span>
+                <Icon name="arrow_forward" className="text-xs" />
               </div>
             </div>
 
@@ -304,14 +310,12 @@ export default function Vergelijken() {
               style={{ background: 'linear-gradient(135deg, #002F59 0%, #00467F 100%)' }}
             >
               <div className="relative z-10">
-                <h3 className="font-headline font-bold text-lg mb-3">Action Point</h3>
+                <h3 className="font-headline font-bold text-lg mb-3">{t('compare.action.title')}</h3>
                 <p className="text-sm text-blue-100/80 leading-relaxed mb-5">
-                  Both programmes score relatively low on{' '}
-                  <strong>Guidance</strong>. This presents an opportunity for centralised improvement
-                  of the mentoring programme within the Fontys ICT institution.
+                  {t('compare.action.body')}
                 </p>
                 <button className="bg-white text-primary px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wide hover:bg-surface-container-low transition-colors">
-                  Share Insight
+                  {t('compare.share')}
                 </button>
               </div>
               <span
@@ -327,7 +331,7 @@ export default function Vergelijken() {
           {isLive && <LiveCompareSection compare={compare} />}
 
           <footer className="mt-16 text-center text-xs text-on-surface-variant opacity-40">
-            © 2025 Fontys University of Applied Sciences - NSE Insights Dashboard. All rights reserved.
+            {t('compare.footer')}
           </footer>
         </section>
       </div>
