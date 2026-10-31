@@ -33,6 +33,23 @@ This spec turns the review's 7 fixes into decisions. It merges three independent
 | D12 | **Advanced:** collapsed, closed by default, not removed. | Waiting on the stakeholder's answer. Demos and grading need model choice. |
 | D13 | **Mobile:** fix horizontal overflow only. | The handover says this runs on workstations. |
 
+## Spike result (D9, Task 12)
+
+Measured 2026-10-31 with `huggingface_hub` 1.33.0 and llama.cpp build b11254 (`tools/llama.cpp/llama-b11254/llama-server`, the binary the app launches). Spike script: `tools/spike_hf_progress.py` (throwaway, not committed).
+
+- **`tqdm_class` reports bytes: yes.** `snapshot_download(tqdm_class=...)` creates one aggregate byte bar, `desc="Downloading bytes"`, `unit="B"`, whose `total` equals the sum of `HfApi().model_info(files_metadata=True)` sibling sizes for the matched files (17,991,091 for bert-tiny; 90,868,988 for all-MiniLM-L6-v2 `model.safetensors`). It received 9 and 36 `update()` calls over about 0.8 s and 3.7 s (roughly 10 per second, in 1 to 2 MB chunks). Cadence depends on network speed, so Task 14 must throttle to about 2 events per second.
+- **Pitfalls.** The class is instantiated several times: a `Fetching N files` bar (`unit="it"`), small bars for tiny files, and a `Reconstructing (incomplete total...)` bar that re-counts the same bytes (xet-backed repos). Filter on `unit == "B"` and `desc == "Downloading bytes"` and take the bar with the largest `total`; summing every byte bar double-counts. The aggregate bar can stop short of its total by a few percent, so report 100% from the function returning, not from the bar.
+- **Polling `blobs/*.incomplete` does not work for xet-backed repos.** In both runs the poller (500 ms) saw zero `.incomplete` bytes, because the bytes land in the xet cache and the blob appears only at the end. It is a fallback only for non-xet files, so Task 14 should not rely on it.
+- **llama-server `-hf` after a pre-download: verified locally.** With an isolated cache (`HF_HUB_CACHE`/`LLAMA_CACHE` pointed at a clone of the existing `unsloth/gemma-4-12B-it-qat-GGUF` snapshot: the `UD-Q4_K_XL` GGUF, `mmproj-BF16.gguf` and the `mtp-*` draft), `llama-server -hf unsloth/gemma-4-12B-it-qat-GGUF:UD-Q4_K_XL ...` loaded the main, draft and mmproj models from the cache and reached "listening" with zero "download" lines in its log. Caveat: that cache was originally written by llama-server itself, not by `snapshot_download`. The layout is the same HF layout, so it is expected to work, but Task 14 should confirm once on a tier that was pre-downloaded by `snapshot_download`.
+
+### Recommendation for Task 14
+
+1. **Mechanism:** call `snapshot_download(repo_id, allow_patterns=[...], tqdm_class=ProgressTqdm)` in a job thread (`src/pipeline/jobs.py`). `ProgressTqdm.update(n)` ignores every bar except `unit == "B"` and `desc == "Downloading bytes"`, and publishes `{done: bar.n, total: bar.total}`.
+2. **Cadence:** emit an NDJSON `stage:"download"` event at most every 500 ms (plus one final event), carrying `bytes_done`, `bytes_total`, and the repo.
+3. **Total bytes:** the aggregate bar's `total`. Before the first update, get it from `HfApi().model_info(repo, files_metadata=True)` summed over siblings matching `allow_patterns`, so the panel shows a size immediately.
+4. **No polling fallback:** `.incomplete` polling is unreliable with xet.
+5. **llama-server launch mode:** keep `-hf <repo>:<quant>` (no re-download once the files are in the HF cache). Use `allow_patterns=["*<quant>*.gguf", "mmproj*", "*mtp*"]` for GGUF repos. If a tier is ever seen to re-download, switch that launch to `-m <local gguf path>` (plus `--mmproj`).
+
 ## Pipeline status contract (D5)
 
 ```json
