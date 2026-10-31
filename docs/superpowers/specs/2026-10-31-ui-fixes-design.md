@@ -48,7 +48,25 @@ Measured 2026-10-31 with `huggingface_hub` 1.33.0 and llama.cpp build b11254 (`t
 2. **Cadence:** emit an NDJSON `stage:"download"` event at most every 500 ms (plus one final event), carrying `bytes_done`, `bytes_total`, and the repo.
 3. **Total bytes:** the aggregate bar's `total`. Before the first update, get it from `HfApi().model_info(repo, files_metadata=True)` summed over siblings matching `allow_patterns`, so the panel shows a size immediately.
 4. **No polling fallback:** `.incomplete` polling is unreliable with xet.
-5. **llama-server launch mode:** keep `-hf <repo>:<quant>` (no re-download once the files are in the HF cache). Use `allow_patterns=["*<quant>*.gguf", "mmproj*", "*mtp*"]` for GGUF repos. If a tier is ever seen to re-download, switch that launch to `-m <local gguf path>` (plus `--mmproj`).
+5. **llama-server launch mode (rewritten after fix round 1):**
+   - Task 14 begins with a one-time verification on a tier written by `snapshot_download` (not llama-server): `snapshot_download` with the allow_patterns below, then `llama-server -hf <repo>:<quant> --offline`. It must reach "listening" with no download.
+   - Until that is proven, a downloaded tier launches with `-hf <repo>:<quant> --offline`. This build supports `--offline` ("forces use of cache, prevents network access", env `LLAMA_ARG_OFFLINE`), so a missing file fails fast instead of silently re-downloading. If the verification fails, launch with `-m <local gguf>`, `--mmproj <local mmproj>` and the draft model args instead. Resolve the paths from the snapshot directory that `snapshot_download` returns.
+   - Cache location: llama-server honours both `HF_HUB_CACHE` and `LLAMA_CACHE` (verified, see below). `llama_cpp_models.py` and `llm_clients.py` currently set no cache env, so llama-server uses its default (`~/.cache/huggingface/hub`). Task 14 must pass the same directory to `snapshot_download(cache_dir=...)` and to the llama-server process, by setting `HF_HUB_CACHE` in the launch env, or by leaving both on the default. Never set it for only one of them.
+
+### Addendum (fix round 1)
+
+Measured with `prajjwal1/bert-tiny` (17,991,091 bytes) and an isolated temp cache.
+
+- **Warm cache:** a second `snapshot_download` took 0.11 s and fired only the `Fetching 5 files` bar (`unit="it"`). No `unit="B"` bar fired. Rule: before starting, compute the missing bytes (sibling sizes from `model_info`, minus files already present in the local snapshot). If nothing is missing, skip the download stage and emit no `download` event.
+- **Partial cache:** with `pytorch_model.bin` (17.76 MB) already present, the aggregate "Downloading bytes" bar had `total=234698` (only the missing bytes) and its `n` counted only newly downloaded bytes. Present bytes are not included in either. The UI uses the bar's `total` and `n` once the first update arrives. Never mix the `model_info` pre-seed with the bar total after the first update; the pre-seed may differ from the bar's total (it is the full size, the bar's is the missing size), so switch bases in one step and never compute `done` from one and `total` from the other.
+- **Several aggregate bars:** a cold run created aggregate bars with totals 345, 17,759,298 and 17,991,091 in turn (per-file batches). Take the bar with the largest `total` seen so far. Its summed `n` ended about 6% short of the total (16.92 of 17.99 MB), so report 100% from the function returning.
+- **llama-server `--offline` and cache env (APFS clone of the 12B snapshot, `-hf ... --offline`):** with only `HF_HUB_CACHE` set, and again with only `LLAMA_CACHE` set, llama-server loaded the main, draft and mmproj models from the clone (log paths pointed into the clone) and reached "listening". So it reads both. Not verified: the exact failure message when `--offline` meets an empty cache.
+- **Unknown or zero total:** send `bytes_total: null`; the UI shows an indeterminate bar with bytes done only.
+- **Offline or Hub unreachable (`HF_HUB_OFFLINE` set):** `model_info` is best-effort in try/except. With the cache complete, skip the download stage; if files are missing, fail the stage clearly with `error.download_failed` (never a raw traceback).
+- **Thread-safety:** the bar writes plain ints from download worker threads, and `snapshot_download` runs several files concurrently. Publish `done`/`total` as a snapshot under a lock in `src/pipeline/jobs.py`.
+- **Throttle:** it lives in the publisher (at most one event per 500 ms), not in `ProgressTqdm.update`, plus one final event when the function returns.
+- **Desc fragility:** select the bar by `unit == "B"` and `desc == "Downloading bytes"`; if no such bar appears, fall back to the `unit == "B"` bar with the largest `total`. Task 14 adds a unit test that pins the desc string against the installed `huggingface_hub` version.
+- **Octen substitution:** the spike used `prajjwal1/bert-tiny` and `sentence-transformers/all-MiniLM-L6-v2` instead of `Octen/Octen-Embedding-0.6B`, so as not to touch the real cache. All three are xet-backed or plain-HTTP repos served the same way, but Task 14 should smoke-test on a real tier once.
 
 ## Pipeline status contract (D5)
 
