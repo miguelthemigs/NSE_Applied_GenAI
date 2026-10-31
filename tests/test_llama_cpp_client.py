@@ -45,7 +45,7 @@ class LlamaCppClientTests(unittest.TestCase):
 
     def test_server_command_enables_mtp_for_qat_mtp_models(self) -> None:
         expected_draft_n = {
-            E2B_MODEL: "3",
+            E2B_MODEL: "2",
             E4B_MODEL: "2",
             MODEL_12B: "2",
             MODEL_26B: "2",
