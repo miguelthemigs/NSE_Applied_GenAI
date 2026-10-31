@@ -4,6 +4,7 @@ import VectorDBBuilder from '../components/VectorDBBuilder';
 import ThemeReranker from '../components/ThemeReranker';
 import InsightGenerator from '../components/InsightGenerator';
 import QueryTab from '../components/QueryTab';
+import { apiUrl } from '../services/api';
 
 export default function PipelineDemo() {
   const [activeTab, setActiveTab] = useState('anonymize');
@@ -15,7 +16,7 @@ export default function PipelineDemo() {
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        const res = await fetch('http://localhost:5001/api/status');
+        const res = await fetch(apiUrl('/api/status'));
         const data = await res.json();
         if (data.status === 'success') {
           setIsAnonymized(Boolean(data.anonymized_exists));

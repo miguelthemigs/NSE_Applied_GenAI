@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useNdjsonStream } from '../hooks/useNdjsonStream';
+import { apiUrl } from '../services/api';
 
 const AVAILABLE_MODELS = [
   {
@@ -40,6 +42,7 @@ const AVAILABLE_MODELS = [
 ];
 
 export default function VectorDBBuilder({ onSuccess }) {
+  const stream = useNdjsonStream();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -60,7 +63,7 @@ export default function VectorDBBuilder({ onSuccess }) {
   useEffect(() => {
     const fetchColumns = async () => {
       try {
-        const res = await fetch('http://localhost:5001/api/inspect-anonymized');
+        const res = await fetch(apiUrl('/api/inspect-anonymized'));
         const data = await res.json();
         if (data.status === 'success') {
           setColumns(data.text_columns || []);
@@ -76,7 +79,7 @@ export default function VectorDBBuilder({ onSuccess }) {
     };
     const fetchCheckpoint = async () => {
       try {
-        const res = await fetch('http://localhost:5001/api/vector-checkpoint-status');
+        const res = await fetch(apiUrl('/api/vector-checkpoint-status'));
         const data = await res.json();
         if (data.has_checkpoint) setVectorCheckpoint(data);
       } catch (e) {}
@@ -106,52 +109,26 @@ export default function VectorDBBuilder({ onSuccess }) {
     setVectorCheckpoint(null);
 
     try {
-      const response = await fetch('http://localhost:5001/api/build-vectors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          embedding_model: model,
-          selected_columns: cols,
-          allow_model_download: allowModelDownload
-        })
-      });
-      
-      if (!response.body) throw new Error("ReadableStream not yet supported in this browser.");
-      
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let done = false;
-
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-        if (value) {
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-          for (const line of lines) {
-            if (line.trim()) {
-              try {
-                const data = JSON.parse(line.trim());
-                if (data.status === 'progress') {
-                  if (data.progress !== undefined) setProgress(data.progress);
-                  if (data.message) setCurrentStage(data.message);
-                  if (data.current_doc) setCurrentDoc(data.current_doc);
-                } else if (data.status === 'success') {
-                  setResult(data);
-                  setProgress(100);
-                  setCurrentStage('Embeddings Generated and Indexed!');
-                  setTimeout(() => onSuccess?.(), 2000);
-                } else if (data.status === 'error') {
-                  setResult({ error: data.error });
-                  break;
-                }
-              } catch (e) {
-                console.error("Failed to parse line", line);
-              }
-            }
+      await stream.start('/api/build-vectors', {
+        embedding_model: model,
+        selected_columns: cols,
+        allow_model_download: allowModelDownload
+      }, {
+        onEvent: (data) => {
+          if (data.status === 'progress') {
+            if (data.progress !== undefined) setProgress(data.progress);
+            if (data.message) setCurrentStage(data.message);
+            if (data.current_doc) setCurrentDoc(data.current_doc);
+          } else if (data.status === 'success') {
+            setResult(data);
+            setProgress(100);
+            setCurrentStage('Embeddings Generated and Indexed!');
+            setTimeout(() => onSuccess?.(), 2000);
+          } else if (data.status === 'error') {
+            setResult({ error: data.error });
           }
         }
-      }
+      });
     } catch (error) {
       setResult({ error: error.message });
       setCurrentStage('Error occurred');

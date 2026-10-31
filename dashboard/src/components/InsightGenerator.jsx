@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { AVAILABLE_LLM_MODELS, LLM_PROVIDER } from '../config/llmModels.js';
+import { useNdjsonStream } from '../hooks/useNdjsonStream';
+import { apiUrl } from '../services/api';
 
 function CacheBadge({ cached, total }) {
   if (cached === 0 && !total) return null;
@@ -20,6 +22,7 @@ function CacheBadge({ cached, total }) {
 }
 
 export default function InsightGenerator({ onComplete }) {
+  const stream = useNdjsonStream();
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState([]);
   const [generating, setGenerating] = useState(false);
@@ -60,7 +63,7 @@ export default function InsightGenerator({ onComplete }) {
 
   const refreshCacheStatus = async () => {
     try {
-      const res = await fetch('http://localhost:5001/api/cache-status');
+      const res = await fetch(apiUrl('/api/cache-status'));
       const data = await res.json();
       if (data && typeof data.main_baseline === 'number') setCacheStatus(data);
     } catch {}
@@ -80,14 +83,14 @@ export default function InsightGenerator({ onComplete }) {
   }, [logs]);
 
   useEffect(() => {
-    fetch('http://localhost:5001/api/vector-stats')
+    fetch(apiUrl('/api/vector-stats'))
       .then(r => r.json())
       .then(data => { if (data.total_documents > 0) setTotalDocs(data.total_documents) })
       .catch(() => {})
   }, []);
 
   useEffect(() => {
-    fetch('http://localhost:5001/api/filter-options')
+    fetch(apiUrl('/api/filter-options'))
       .then(r => r.json())
       .then(data => {
         const opts = data?.options || {};
@@ -114,7 +117,7 @@ export default function InsightGenerator({ onComplete }) {
       setValidCombos(null);
       return;
     }
-    fetch('http://localhost:5001/api/precompute-preview', {
+    fetch(apiUrl('/api/precompute-preview'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filter_dimensions: filterDimensions }),
@@ -153,7 +156,7 @@ export default function InsightGenerator({ onComplete }) {
     });
 
     try {
-      const res = await fetch('http://localhost:5001/api/llm-models/start', {
+      const res = await fetch(apiUrl('/api/llm-models/start'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -197,7 +200,7 @@ export default function InsightGenerator({ onComplete }) {
       const cacheLabel = endpoint === '/api/precompute-subthemes' ? 'subtheme' : 'main theme';
       setLogs(prev => [...prev, `⚙️ Clearing ${cacheLabel} cache...`]);
       try {
-        await fetch(`http://localhost:5001${clearEndpoint}`, { method: 'POST' });
+        await fetch(apiUrl(`${clearEndpoint}`), { method: 'POST' });
         setLogs(prev => [...prev, `✅ ${cacheLabel} cache cleared.`]);
       } catch (e) {
         setLogs(prev => [...prev, `⚠️ Could not clear cache: ${e.message}`]);
@@ -237,47 +240,7 @@ export default function InsightGenerator({ onComplete }) {
       };
 
       try {
-        const res = await fetch(`http://localhost:5001${endpoint}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-
-        if (!res.ok) {
-          let message = `Request failed with HTTP ${res.status}`;
-          try {
-            const data = await res.json();
-            message = data.message || data.error || message;
-          } catch (e) {
-            const text = await res.text();
-            if (text) message = text;
-          }
-          throw new Error(message);
-        }
-
-        if (!res.body) throw new Error('The backend did not return a progress stream.');
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) { buffer += decoder.decode(); break; }
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-          for (let line of lines) {
-            try { handleStreamEvent(JSON.parse(line)); }
-            catch (e) { setLogs(prev => [...prev, `⚠️ Could not parse: ${line}`]); }
-          }
-        }
-
-        const trailingLine = buffer.trim();
-        if (trailingLine) {
-          try { handleStreamEvent(JSON.parse(trailingLine)); }
-          catch (e) { setLogs(prev => [...prev, `⚠️ Could not parse: ${trailingLine}`]); }
-        }
+        await stream.start(endpoint, body, { onEvent: handleStreamEvent });
       } catch (e) {
         setLogs(prev => [...prev, `⚠️ Connection error: ${e.message}`]);
       }

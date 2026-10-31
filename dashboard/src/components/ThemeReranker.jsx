@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useNdjsonStream } from '../hooks/useNdjsonStream';
+import { apiUrl } from '../services/api';
 
 const DEFAULT_RERANKER = 'zeroentropy/zerank-2-reranker';
 
 export default function ThemeReranker({ onSuccess }) {
+  const stream = useNdjsonStream();
   const [status, setStatus] = useState(null);
   const [rerankerModel, setRerankerModel] = useState(DEFAULT_RERANKER);
   const [allowModelDownload, setAllowModelDownload] = useState(true);
@@ -15,7 +18,7 @@ export default function ThemeReranker({ onSuccess }) {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const res = await fetch('http://localhost:5001/api/status');
+        const res = await fetch(apiUrl('/api/status'));
         const data = await res.json();
         if (data.status === 'success') setStatus(data);
       } catch (e) {
@@ -40,27 +43,8 @@ export default function ThemeReranker({ onSuccess }) {
         payload.max_documents = Number(maxDocuments);
       }
 
-      const response = await fetch('http://localhost:5001/api/rerank-theme-assignments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.body) throw new Error('ReadableStream not available.');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let done = false;
-
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-        if (!value) continue;
-
-        const chunk = decoder.decode(value, { stream: true });
-        for (const line of chunk.split('\n')) {
-          if (!line.trim()) continue;
-          const data = JSON.parse(line.trim());
+      await stream.start('/api/rerank-theme-assignments', payload, {
+        onEvent: (data) => {
           if (data.status === 'progress') {
             if (data.progress !== undefined) setProgress(data.progress);
             if (data.message) setCurrentStage(data.message);
@@ -72,11 +56,9 @@ export default function ThemeReranker({ onSuccess }) {
           } else if (data.status === 'error') {
             setResult({ error: data.error });
             setCurrentStage('Reranker failed.');
-            done = true;
-            break;
           }
         }
-      }
+      });
     } catch (error) {
       setResult({ error: error.message });
       setCurrentStage('Reranker failed.');

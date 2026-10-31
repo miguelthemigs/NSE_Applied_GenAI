@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useNdjsonStream } from '../hooks/useNdjsonStream';
+import { apiUrl } from '../services/api';
 
 export default function AnonymizerTab({ onComplete, existingAnonymized }) {
+  const stream = useNdjsonStream();
   const [file, setFile] = useState(null);
   const [columns, setColumns] = useState([]);
   const [selectedColumns, setSelectedColumns] = useState([]);
@@ -24,22 +27,22 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
   const [lastReport, setLastReport] = useState(null);
 
   useEffect(() => {
-    fetch('http://localhost:5001/api/checkpoint-status')
+    fetch(apiUrl('/api/checkpoint-status'))
       .then(r => r.json())
       .then(data => { if (data.has_checkpoint) setCheckpoint(data); })
       .catch(() => {});
-    fetch('http://localhost:5001/api/anonymize-report')
+    fetch(apiUrl('/api/anonymize-report'))
       .then(r => r.json())
       .then(data => { if (data.has_report) setLastReport(data); })
       .catch(() => {});
-    fetch('http://localhost:5001/api/word-blocklist')
+    fetch(apiUrl('/api/word-blocklist'))
       .then(r => r.json())
       .then(data => { if (Array.isArray(data.words)) setBlocklist(data.words); })
       .catch(() => {});
   }, []);
 
   const saveBlocklist = (updatedWords) => {
-    fetch('http://localhost:5001/api/word-blocklist', {
+    fetch(apiUrl('/api/word-blocklist'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ words: updatedWords }),
@@ -94,19 +97,8 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
     setProgress(0);
     setStatusMessage('Verificatie starten...');
     try {
-      const res = await fetch('http://localhost:5001/api/run-anonymize-check', { method: 'POST' });
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const data = JSON.parse(line);
+      await stream.start('/api/run-anonymize-check', undefined, {
+        onEvent: (data) => {
           if (data.status === 'progress') {
             if (data.progress !== undefined) setProgress(data.progress);
             if (data.message) setStatusMessage(data.message);
@@ -124,10 +116,9 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
             setStep(3);
           } else if (data.status === 'error') {
             setResult({ error: data.error });
-            break;
           }
         }
-      }
+      });
     } catch (err) {
       setResult({ error: err.message });
     } finally {
@@ -197,7 +188,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
       const formData = new FormData();
       formData.append('file', uploadedFile);
 
-      const response = await fetch('http://localhost:5001/api/inspect-file', {
+      const response = await fetch(apiUrl('/api/inspect-file'), {
         method: 'POST',
         body: formData
       });
@@ -260,55 +251,29 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
     setCheckpoint(null);
 
     try {
-      const response = await fetch('http://localhost:5001/api/anonymize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          selected_columns: cols,
-          selected_layers: lyrs,
-          run_verification: verify
-        })
-      });
-
-      if (!response.body) throw new Error("ReadableStream not yet supported in this browser.");
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let done = false;
-
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-        if (value) {
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-          for (const line of lines) {
-            if (line.trim()) {
-              try {
-                const data = JSON.parse(line.trim());
-                if (data.status === 'progress') {
-                  if (data.progress !== undefined) setProgress(data.progress);
-                  if (data.message) setStatusMessage(data.message);
-                  if (data.preview) setCurrentPreview(data.preview);
-                  if (data.checkpoint_saved && data.row) setLastCheckpointRow(`${data.column} — rij ${data.row}/${data.total_rows}`);
-                } else if (data.status === 'success') {
-                  setResult(data);
-                  setProgress(100);
-                  setStatusMessage('Complete!');
-                  setTimeout(() => {
-                    if (typeof onComplete === 'function') onComplete();
-                  }, 1500);
-                } else if (data.status === 'error') {
-                  setResult({ error: data.error });
-                  break;
-                }
-              } catch (e) {
-                console.error("Failed to parse line", line);
-              }
-            }
+      await stream.start('/api/anonymize', {
+        selected_columns: cols,
+        selected_layers: lyrs,
+        run_verification: verify
+      }, {
+        onEvent: (data) => {
+          if (data.status === 'progress') {
+            if (data.progress !== undefined) setProgress(data.progress);
+            if (data.message) setStatusMessage(data.message);
+            if (data.preview) setCurrentPreview(data.preview);
+            if (data.checkpoint_saved && data.row) setLastCheckpointRow(`${data.column} — rij ${data.row}/${data.total_rows}`);
+          } else if (data.status === 'success') {
+            setResult(data);
+            setProgress(100);
+            setStatusMessage('Complete!');
+            setTimeout(() => {
+              if (typeof onComplete === 'function') onComplete();
+            }, 1500);
+          } else if (data.status === 'error') {
+            setResult({ error: data.error });
           }
         }
-      }
+      });
     } catch (error) {
       setResult({ error: error.message });
       setProgress(0);

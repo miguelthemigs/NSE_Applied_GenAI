@@ -5,6 +5,7 @@ import FilterDropdown from '../components/FilterDropdown'
 import HeroBanner from '../components/HeroBanner'
 import SubthemeWordCloud from '../components/SubthemeWordCloud'
 import { Link } from 'react-router-dom'
+import { getJson, OfflineError } from '../services/api'
 import { LayoutGroup, motion } from 'framer-motion'
 import { parseThemesOverview } from '../utils/overviewResponse'
 import { LOCATION_OPTIONS } from '../constants/locations'
@@ -35,10 +36,9 @@ export default function Overview() {
   });
 
   useEffect(() => {
-    fetch('http://localhost:5001/api/filter-options')
-      .then(r => r.json())
-      .then(data => {
-        if (data.status === 'success') setFilterOptions(data.options);
+    getJson('/api/filter-options')
+      .then(({ data }) => {
+        if (data?.status === 'success') setFilterOptions(data.options);
       })
       .catch(e => console.error(e));
   }, []);
@@ -51,9 +51,8 @@ export default function Overview() {
       return;
     }
     const params = new URLSearchParams(apiFilters);
-    fetch(`http://localhost:5001/api/filter-options?${params}`)
-      .then(r => r.json())
-      .then(data => { if (data.status === 'success') setAvailableFilterOptions(data.options); })
+    getJson(`/api/filter-options?${params}`)
+      .then(({ data }) => { if (data?.status === 'success') setAvailableFilterOptions(data.options); })
       .catch(() => {});
   }, [filters]);
 
@@ -67,14 +66,12 @@ export default function Overview() {
     const params = new URLSearchParams(filtersToApiParams(filters))
 
     setLoadingThemes(true)
-    fetch(`http://localhost:5001/api/themes-overview?${params}`)
-      .then(async r => {
-        const data = await r.json().catch(() => null)
-        return { ok: r.ok, data }
-      })
+    getJson(`/api/themes-overview?${params}`)
+      .then(({ ok, data }) => ({ ok, data }))
       .catch(e => {
         console.error(e)
-        return { offline: true }
+        if (e instanceof OfflineError) return { offline: true }
+        throw e
       })
       .then(result => {
         const parsed = parseThemesOverview(result)

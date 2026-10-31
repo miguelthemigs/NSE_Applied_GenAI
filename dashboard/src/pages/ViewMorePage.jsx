@@ -13,6 +13,7 @@ import { LOCATION_OPTIONS } from "../constants/locations";
 import { getThemeColor } from "../constants/themeColors";
 import { buildRealTheme, REAL_THEME_META, THEME_NAME_BY_ID } from "../constants/realThemes";
 import { motion } from "framer-motion";
+import { apiUrl } from "../services/api";
 import {
   filtersFromSearchParams,
   filtersToApiParams,
@@ -882,7 +883,7 @@ export default function ViewMorePage() {
   });
 
   useEffect(() => {
-    fetch("http://localhost:5001/api/filter-options")
+    fetch(apiUrl('/api/filter-options'))
       .then((r) => r.json())
       .then((data) => {
         if (data.status === "success") setFilterOptions(data.options);
@@ -898,7 +899,7 @@ export default function ViewMorePage() {
       return;
     }
     const params = new URLSearchParams(apiFilters);
-    fetch(`http://localhost:5001/api/filter-options?${params}`)
+    fetch(apiUrl(`/api/filter-options?${params}`))
       .then((r) => r.json())
       .then((data) => { if (data.status === "success") setAvailableFilterOptions(data.options); })
       .catch(() => {});
@@ -945,7 +946,7 @@ export default function ViewMorePage() {
     setLoadingSubtheme(true);
     setSubthemeLiveData(null);
     const apiFilters = filtersToApiParams(filters);
-    fetch("http://localhost:5001/api/theme-summary", {
+    fetch(apiUrl('/api/theme-summary'), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
