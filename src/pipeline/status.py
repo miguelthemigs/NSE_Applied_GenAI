@@ -62,18 +62,26 @@ def _parse_iso(value) -> datetime | None:
     return parsed
 
 
+class _MtimeStamp(str):
+    """An ISO timestamp that only comes from a file's mtime (source: mtime).
+
+    Serialised and shown like any `completed_at`, but never trusted for
+    staleness: chroma.sqlite3's mtime moves whenever the DB is opened.
+    """
+
+
 def _mtime_iso(path: Path) -> str | None:
     try:
         mtime = path.stat().st_mtime
     except OSError:
         return None
-    return datetime.fromtimestamp(mtime, tz=timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%S.%fZ"
+    return _MtimeStamp(
+        datetime.fromtimestamp(mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     )
 
 
 def _completed_at(entry: dict, artefact: Path | None) -> str | None:
-    """`completed_at` from the state file, else the artefact's mtime."""
+    """`completed_at` from the state file, else the artefact's mtime (a `_MtimeStamp`)."""
     value = entry.get("completed_at")
     if _parse_iso(value) is not None:
         return value
@@ -81,7 +89,13 @@ def _completed_at(entry: dict, artefact: Path | None) -> str | None:
 
 
 def _newer(a: str | None, b: str | None) -> bool:
-    """True when timestamp `a` is strictly later than `b` (both known)."""
+    """True when timestamp `a` is strictly later than `b`.
+
+    Both must be known, recorded timestamps: an mtime-only fallback never
+    makes a step stale.
+    """
+    if isinstance(a, _MtimeStamp) or isinstance(b, _MtimeStamp):
+        return False
     parsed_a, parsed_b = _parse_iso(a), _parse_iso(b)
     return parsed_a is not None and parsed_b is not None and parsed_a > parsed_b
 

@@ -282,6 +282,38 @@ class PipelineStatusTests(unittest.TestCase):
         )
         self.assertEqual(self._states()["rerank"], "stale")
 
+    def test_mtime_fallback_never_marks_a_step_stale(self):
+        # chroma.sqlite3's mtime moves whenever the DB is opened; a step with a
+        # real completed_at must not turn stale because of it (I5).
+        self._write_anonymize()
+        self._vectors_ready(theme_reranker_status="ready")
+        sqlite = self.dir / "survey_vector_db" / "chroma.sqlite3"
+        sqlite.parent.mkdir(parents=True)
+        sqlite.write_bytes(b"")  # mtime: now, long after rerank below
+        self._write_state(
+            {
+                "anonymize": {"completed_at": "2026-01-01T00:00:00.000000Z"},
+                "rerank": {"completed_at": "2026-01-03T00:00:00.000000Z"},
+            }
+        )
+        payload = self._status()
+        steps = payload["steps"]
+        self.assertEqual(steps["vectors"]["state"], "done")
+        self.assertEqual(steps["rerank"]["state"], "done")
+        # The fallback is still shown as vectors' completed_at.
+        self.assertIsNotNone(status._parse_iso(steps["vectors"]["completed_at"]))
+        self.assertGreater(
+            status._parse_iso(steps["vectors"]["completed_at"]),
+            status._parse_iso(steps["rerank"]["completed_at"]),
+        )
+        json.dumps(payload)  # still plain JSON
+
+    def test_mtime_fallback_upstream_does_not_mark_vectors_stale(self):
+        self._write_anonymize()  # anonymize has no saved completed_at: CSV mtime (now)
+        self._vectors_ready()
+        self._write_state({"vectors": {"completed_at": "2026-01-02T00:00:00.000000Z"}})
+        self.assertEqual(self._states()["vectors"], "done")
+
     def test_insights_partial(self):
         self._write_anonymize()
         self._vectors_ready()
