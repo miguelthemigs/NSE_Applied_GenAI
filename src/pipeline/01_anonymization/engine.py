@@ -1,4 +1,6 @@
 import json
+
+from src.pipeline.events import stream_event
 import logging
 import os
 import re
@@ -72,11 +74,7 @@ def process_file_with_layers(
         checkpoint_col = checkpoint_meta.get("current_col")
         checkpoint_batch_end = checkpoint_meta.get("current_batch_end", 0)
         yield (
-            json.dumps({
-                "status": "progress",
-                "message": f"Resuming from checkpoint ({len(completed_columns)} column(s) already done)...",
-                "progress": 5,
-            }) + "\n"
+            stream_event("progress", stage="read", message=f"Resuming from checkpoint ({len(completed_columns)} column(s) already done)...", progress=5)
         )
     else:
         df = df_original.copy()
@@ -84,8 +82,7 @@ def process_file_with_layers(
         checkpoint_col = None
         checkpoint_batch_end = 0
         yield (
-            json.dumps({"status": "progress", "message": "Initializing...", "progress": 5})
-            + "\n"
+            stream_event("progress", stage="read", message="Initializing...", progress=5)
         )
 
     stat = os.stat(input_path)
@@ -107,15 +104,7 @@ def process_file_with_layers(
         validate_selected_layers(layers)
     except Exception as e:
         yield (
-            json.dumps(
-                {
-                    "status": "error",
-                    "error": str(e),
-                    "message": "Model preflight failed before anonymization started.",
-                    "progress": 0,
-                }
-            )
-            + "\n"
+            stream_event("error", code="error.model_missing", message="Model preflight failed before anonymization started.", progress=0, error=str(e))
         )
         return
 
@@ -124,38 +113,17 @@ def process_file_with_layers(
 
     if "presidio" in layers:
         yield (
-            json.dumps(
-                {
-                    "status": "progress",
-                    "message": "Loading Layer 1 (Presidio)...",
-                    "progress": 10,
-                }
-            )
-            + "\n"
+            stream_event("progress", stage="load", message="Loading Layer 1 (Presidio)...", progress=10)
         )
     if "eu-pii" in layers:
         device_label = describe_model_device(get_model_device())
         yield (
-            json.dumps(
-                {
-                    "status": "progress",
-                    "message": f"Loading Layer 2 (EU-PII-Safeguard) on {device_label}...",
-                    "progress": 20,
-                }
-            )
-            + "\n"
+            stream_event("progress", stage="load", message=f"Loading Layer 2 (EU-PII-Safeguard) on {device_label}...", progress=20)
         )
     if "openai-privacy-filter" in layers:
         device_label = describe_model_device(get_model_device())
         yield (
-            json.dumps(
-                {
-                    "status": "progress",
-                    "message": f"Loading Layer 2 (OpenAI Privacy Filter) on {device_label}...",
-                    "progress": 20,
-                }
-            )
-            + "\n"
+            stream_event("progress", stage="load", message=f"Loading Layer 2 (OpenAI Privacy Filter) on {device_label}...", progress=20)
         )
 
     # Load custom word blocklist once — applied after every batch as a fast
@@ -170,39 +138,18 @@ def process_file_with_layers(
     for col_idx, col in enumerate(columns_to_anonymize):
         if col not in df.columns:
             yield (
-                json.dumps(
-                    {
-                        "status": "progress",
-                        "message": f"Column ‘{col}’ not found.",
-                        "progress": 20,
-                    }
-                )
-                + "\n"
+                stream_event("progress", stage="process", message=f"Column ‘{col}’ not found.", progress=20)
             )
             continue
 
         if col in completed_columns:
             yield (
-                json.dumps(
-                    {
-                        "status": "progress",
-                        "message": f"Skipping ‘{col}’ (already done in checkpoint).",
-                        "progress": 20 + int(70 * ((col_idx + 1) / total_cols)),
-                    }
-                )
-                + "\n"
+                stream_event("progress", stage="process", message=f"Skipping ‘{col}’ (already done in checkpoint).", progress=20 + int(70 * ((col_idx + 1) / total_cols)))
             )
             continue
 
         yield (
-            json.dumps(
-                {
-                    "status": "progress",
-                    "message": f"Anonymizing column: {col}...",
-                    "progress": 20 + int(70 * (col_idx / total_cols)),
-                }
-            )
-            + "\n"
+            stream_event("progress", stage="process", message=f"Anonymizing column: {col}...", progress=20 + int(70 * (col_idx / total_cols)))
         )
 
         # How far we already got in this column (0 = fresh start).
@@ -244,21 +191,9 @@ def process_file_with_layers(
             preview_row = last_i - 1 if last_i else 0
             pv = col_series.at[preview_row] if preview_row >= 0 else ""
             yield (
-                json.dumps(
-                    {
-                        "status": "progress",
-                        "column": col,
-                        "row": last_i,
-                        "total_rows": total_rows,
-                        "checkpoint_saved": True,
-                        "preview": (str(pv)[:60] + "...")
+                stream_event("progress", stage="process", message=f"Processing rows 1–{last_i}/{total_rows} in {col} (batch {_ANON_BATCH})", progress=base_progress + row_progress, column=col, row=last_i, total_rows=total_rows, checkpoint_saved=True, preview=(str(pv)[:60] + "...")
                         if isinstance(pv, str) and pv
-                        else "",
-                        "progress": base_progress + row_progress,
-                        "message": f"Processing rows 1–{last_i}/{total_rows} in {col} (batch {_ANON_BATCH})",
-                    }
-                )
-                + "\n"
+                        else "")
             )
 
         # Column done — update completed list and remove in-progress markers.
@@ -315,15 +250,7 @@ def process_file_with_layers(
         _clear_checkpoint()
 
         yield (
-            json.dumps(
-                {
-                    "status": "success",
-                    "message": "Anonymization complete",
-                    "rows_processed": total_rows,
-                    "columns_anonymized": columns_to_anonymize,
-                    "progress": 100,
-                    "verification_skipped": True,
-                    "stats": {
+            stream_event("success", message="Anonymization complete", progress=100, rows_processed=total_rows, columns_anonymized=columns_to_anonymize, verification_skipped=True, stats={
                         "total_cells": total_cells,
                         "affected_cells": affected_cells,
                         "total_entities": total_entities,
@@ -332,17 +259,13 @@ def process_file_with_layers(
                         "missed_samples": missed_samples,
                         "removed_samples": removed_samples,
                         "verification_skipped": True,
-                    },
-                }
-            )
-            + "\n"
+                    })
         )
         return
 
     # --- Verification: detect entities in ORIGINAL text, check if they survived in output ---
     yield (
-        json.dumps({"status": "progress", "message": "Verifying output...", "progress": 98})
-        + "\n"
+        stream_event("progress", stage="process", message="Verifying output...", progress=98)
     )
 
     from .layers.layer1_presidio import collect_presidio_spans
@@ -432,14 +355,7 @@ def process_file_with_layers(
     _clear_checkpoint()
 
     yield (
-        json.dumps(
-            {
-                "status": "success",
-                "message": "Anonymization complete",
-                "rows_processed": total_rows,
-                "columns_anonymized": columns_to_anonymize,
-                "progress": 100,
-                "stats": {
+        stream_event("success", message="Anonymization complete", progress=100, rows_processed=total_rows, columns_anonymized=columns_to_anonymize, stats={
                     "total_cells": total_cells,
                     "affected_cells": affected_cells,
                     "total_entities": total_entities,
@@ -447,10 +363,7 @@ def process_file_with_layers(
                     "missed_counts": missed_counts,
                     "missed_samples": missed_samples,
                     "removed_samples": removed_samples,
-                },
-            }
-        )
-        + "\n"
+                })
     )
 
 
@@ -469,18 +382,18 @@ def run_check_stream(original_path: str, anonymized_path: str, columns: list, se
         logger.info("EU-PII unavailable for verification (%s) — HEALTH samples will be empty.", e)
         _eu_pii_ok = False
 
-    yield json.dumps({"status": "progress", "message": "Bestanden inlezen...", "progress": 5}) + "\n"
+    yield stream_event("progress", stage="read", message="Bestanden inlezen...", progress=5)
 
     try:
         df_original = _read_input(original_path, sep)
         df_anon = _read_input(anonymized_path, sep)
     except Exception as e:
-        yield json.dumps({"status": "error", "error": f"Kon bestanden niet lezen: {e}"}) + "\n"
+        yield stream_event("error", code="error.backend", error=f"Kon bestanden niet lezen: {e}")
         return
 
     valid_cols = [c for c in columns if c in df_original.columns and c in df_anon.columns]
     if not valid_cols:
-        yield json.dumps({"status": "error", "error": "Geen overeenkomende kolommen gevonden in beide bestanden."}) + "\n"
+        yield stream_event("error", code="error.no_data", error="Geen overeenkomende kolommen gevonden in beide bestanden.")
         return
 
     total_rows = len(df_original)
@@ -489,10 +402,10 @@ def run_check_stream(original_path: str, anonymized_path: str, columns: list, se
     import random
     if sample_rows and sample_rows < total_rows:
         sampled_indices = sorted(random.sample(range(total_rows), sample_rows))
-        yield json.dumps({"status": "progress", "message": f"{total_rows} rijen gevonden, steekproef {sample_rows}. Tags tellen...", "progress": 10}) + "\n"
+        yield stream_event("progress", stage="read", message=f"{total_rows} rijen gevonden, steekproef {sample_rows}. Tags tellen...", progress=10)
     else:
         sampled_indices = list(range(total_rows))
-        yield json.dumps({"status": "progress", "message": f"{total_rows} rijen gevonden. Tags tellen...", "progress": 10}) + "\n"
+        yield stream_event("progress", stage="read", message=f"{total_rows} rijen gevonden. Tags tellen...", progress=10)
 
     # Count tags in anonymized output
     _TAG_RE = re.compile(r'\[(NAME|PII|LOCATION|TITLE|HEALTH)\]')
@@ -513,7 +426,7 @@ def run_check_stream(original_path: str, anonymized_path: str, columns: list, se
                 for tag in matches:
                     tag_counts[tag] += 1
 
-    yield json.dumps({"status": "progress", "message": "Presidio verificatie uitvoeren op originele tekst...", "progress": 20}) + "\n"
+    yield stream_event("progress", stage="process", message="Presidio verificatie uitvoeren op originele tekst...", progress=20)
 
     layer_config = {"names": True, "locations": True, "pii": True, "titles": True}
     missed_counts = {"NAME": 0, "PII": 0, "LOCATION": 0, "TITLE": 0, "HEALTH": 0}
@@ -522,11 +435,7 @@ def run_check_stream(original_path: str, anonymized_path: str, columns: list, se
 
     for col_idx, col in enumerate(valid_cols):
         base_progress = 20 + int(75 * (col_idx / len(valid_cols)))
-        yield json.dumps({
-            "status": "progress",
-            "message": f"Kolom controleren: {col}...",
-            "progress": base_progress,
-        }) + "\n"
+        yield stream_event("progress", stage="process", message=f"Kolom controleren: {col}...", progress=base_progress)
 
         # Batch EU-PII spans for the sampled rows only (transformer hates row-by-row).
         col_eu_spans_by_idx: dict[int, list] = {}
@@ -578,9 +487,9 @@ def run_check_stream(original_path: str, anonymized_path: str, columns: list, se
                         removed_samples[key].append(entity_text)
 
         col_progress = 20 + int(75 * ((col_idx + 1) / len(valid_cols)))
-        yield json.dumps({"status": "progress", "message": f"Kolom '{col}' klaar.", "progress": col_progress}) + "\n"
+        yield stream_event("progress", stage="process", message=f"Kolom '{col}' klaar.", progress=col_progress)
 
-    yield json.dumps({"status": "progress", "message": "Rapport opslaan...", "progress": 97}) + "\n"
+    yield stream_event("progress", stage="save", message="Rapport opslaan...", progress=97)
 
     _write_report(
         input_path=original_path,
@@ -597,13 +506,7 @@ def run_check_stream(original_path: str, anonymized_path: str, columns: list, se
         removed_samples=removed_samples,
     )
 
-    yield json.dumps({
-        "status": "success",
-        "message": "Verificatie voltooid",
-        "rows_processed": total_rows,
-        "columns_anonymized": valid_cols,
-        "progress": 100,
-        "stats": {
+    yield stream_event("success", message="Verificatie voltooid", progress=100, rows_processed=total_rows, columns_anonymized=valid_cols, stats={
             "total_cells": total_cells,
             "affected_cells": affected_cells,
             "total_entities": total_entities,
@@ -611,8 +514,7 @@ def run_check_stream(original_path: str, anonymized_path: str, columns: list, se
             "missed_counts": missed_counts,
             "missed_samples": missed_samples,
             "removed_samples": removed_samples,
-        },
-    }) + "\n"
+        })
 
 
 if __name__ == "__main__":

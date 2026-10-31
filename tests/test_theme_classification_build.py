@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from src.config.themes import THEME_EMBEDDING_DEFINITIONS
+from src.pipeline.events import STAGES
 
 
 theme_classifier = import_module("src.pipeline.02_embedding.theme_classifier")
@@ -341,6 +342,10 @@ class ThemeClassificationTests(unittest.TestCase):
                 ]
 
                 self.assertEqual(events[-1]["status"], "success", events)
+                progress_events = [e for e in events if e["status"] == "progress"]
+                self.assertTrue(progress_events)
+                for event in progress_events:
+                    self.assertIn(event.get("stage"), STAGES, event)
                 load_reranker.assert_not_called()
                 collection = chromadb.PersistentClient(
                     path=str(db_path)
@@ -360,6 +365,9 @@ class ThemeClassificationTests(unittest.TestCase):
                 ]
 
             self.assertEqual(rerank_events[-1]["status"], "success", rerank_events)
+            for event in rerank_events:
+                if event["status"] == "progress":
+                    self.assertIn(event.get("stage"), STAGES, event)
             self.assertGreater(rerank_events[-1]["reranked_documents"], 0)
             self.assertGreater(rerank_events[-1]["changed_primary"], 0)
             completed = chromadb.PersistentClient(
