@@ -17,16 +17,24 @@ export function useNdjsonStream() {
     controllerRef.current?.abort()
   }, [])
 
-  useEffect(() => () => controllerRef.current?.abort(), [])
+  // Unmounting must not close the connection (that would kill the server-side
+  // run); it only stops state updates. Only cancel() aborts.
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   const start = useCallback(async (path, body, { onEvent } = {}) => {
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
-    setEvents([])
-    setLast(null)
-    setError(null)
-    setRunning(true)
+    if (mountedRef.current) {
+      setEvents([])
+      setLast(null)
+      setError(null)
+      setRunning(true)
+    }
     let lastEvent = null
     try {
       let response
@@ -53,16 +61,18 @@ export function useNdjsonStream() {
       }
       await readNdjson(response, (evt) => {
         lastEvent = evt
-        setEvents((prev) => [...prev, evt])
-        setLast(evt)
+        if (mountedRef.current) {
+          setEvents((prev) => [...prev, evt])
+          setLast(evt)
+        }
         onEvent?.(evt)
       }, controller.signal)
       return lastEvent
     } catch (e) {
-      if (controllerRef.current === controller) setError(e)
+      if (mountedRef.current && controllerRef.current === controller) setError(e)
       throw e
     } finally {
-      if (controllerRef.current === controller) setRunning(false)
+      if (mountedRef.current && controllerRef.current === controller) setRunning(false)
     }
   }, [])
 

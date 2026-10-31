@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { filtersToApiParams } from '../utils/filters'
-import { apiUrl } from '../services/api';
+import { apiUrl } from '../services/api'
 
 export function useThemeSummary(theme, filters = {}) {
   const [liveData, setLiveData] = useState(null)

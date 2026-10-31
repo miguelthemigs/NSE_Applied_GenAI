@@ -883,7 +883,7 @@ export default function ViewMorePage() {
   });
 
   useEffect(() => {
-    fetch(apiUrl('/api/filter-options'))
+    fetch(apiUrl("/api/filter-options"))
       .then((r) => r.json())
       .then((data) => {
         if (data.status === "success") setFilterOptions(data.options);
@@ -946,7 +946,7 @@ export default function ViewMorePage() {
     setLoadingSubtheme(true);
     setSubthemeLiveData(null);
     const apiFilters = filtersToApiParams(filters);
-    fetch(apiUrl('/api/theme-summary'), {
+    fetch(apiUrl("/api/theme-summary"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

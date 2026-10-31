@@ -23,6 +23,11 @@ function CacheBadge({ cached, total }) {
 
 export default function InsightGenerator({ onComplete }) {
   const stream = useNdjsonStream();
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState([]);
   const [generating, setGenerating] = useState(false);
@@ -200,7 +205,7 @@ export default function InsightGenerator({ onComplete }) {
       const cacheLabel = endpoint === '/api/precompute-subthemes' ? 'subtheme' : 'main theme';
       setLogs(prev => [...prev, `⚙️ Clearing ${cacheLabel} cache...`]);
       try {
-        await fetch(apiUrl(`${clearEndpoint}`), { method: 'POST' });
+        await fetch(apiUrl(clearEndpoint), { method: 'POST' });
         setLogs(prev => [...prev, `✅ ${cacheLabel} cache cleared.`]);
       } catch (e) {
         setLogs(prev => [...prev, `⚠️ Could not clear cache: ${e.message}`]);
@@ -242,14 +247,19 @@ export default function InsightGenerator({ onComplete }) {
       try {
         await stream.start(endpoint, body, { onEvent: handleStreamEvent });
       } catch (e) {
+        if (e?.name === 'AbortError') {
+          setGenerating(false);
+          break;
+        }
         setLogs(prev => [...prev, `⚠️ Connection error: ${e.message}`]);
       }
 
-      if (completed) break;
+      if (completed || !mountedRef.current) break;
 
       if (attempt < MAX_RETRIES) {
         setLogs(prev => [...prev, `🔄 Stream stopped, resuming in ${RETRY_DELAY_MS / 1000}s... (${attempt + 1}/${MAX_RETRIES})`]);
         await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+        if (!mountedRef.current) break;
       } else {
         setLogs(prev => [...prev, '❌ Max retries reached. Some themes may be missing.']);
         setGenerating(false);

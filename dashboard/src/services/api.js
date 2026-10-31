@@ -54,6 +54,7 @@ export function postJson(path, body) {
  * Read an NDJSON response body, calling onEvent(obj) for each complete line.
  * Partial lines are buffered across chunks; blank lines are skipped; a final
  * line without a trailing newline is parsed when the stream ends.
+ * Rejects with an AbortError when the signal aborts.
  */
 export async function readNdjson(response, onEvent, signal) {
   if (!response.body) throw new Error('Response has no readable body')
@@ -72,12 +73,17 @@ export async function readNdjson(response, onEvent, signal) {
     }
     onEvent(obj)
   }
+  const abortError = () => new DOMException('The stream was cancelled', 'AbortError')
   const onAbort = () => reader.cancel().catch(() => {})
+  if (signal?.aborted) {
+    onAbort()
+    throw abortError()
+  }
   signal?.addEventListener('abort', onAbort)
   try {
     for (;;) {
-      if (signal?.aborted) break
       const { value, done } = await reader.read()
+      if (signal?.aborted) throw abortError()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split('\n')
@@ -85,7 +91,7 @@ export async function readNdjson(response, onEvent, signal) {
       lines.forEach(flushLine)
     }
     buffer += decoder.decode()
-    if (!signal?.aborted) flushLine(buffer)
+    flushLine(buffer)
   } finally {
     signal?.removeEventListener('abort', onAbort)
   }
