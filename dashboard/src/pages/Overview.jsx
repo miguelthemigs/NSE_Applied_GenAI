@@ -4,7 +4,9 @@ import ThemeCard from '../components/ThemeCard'
 import FilterDropdown from '../components/FilterDropdown'
 import HeroBanner from '../components/HeroBanner'
 import SubthemeWordCloud from '../components/SubthemeWordCloud'
+import { Link } from 'react-router-dom'
 import { LayoutGroup, motion } from 'framer-motion'
+import { parseThemesOverview } from '../utils/overviewResponse'
 import { LOCATION_OPTIONS } from '../constants/locations'
 import { buildRealTheme } from '../constants/realThemes'
 import {
@@ -57,6 +59,7 @@ export default function Overview() {
 
   const [dynamicThemesData, setDynamicThemesData] = useState({})
   const [overviewMeta, setOverviewMeta] = useState(null)
+  const [overviewKind, setOverviewKind] = useState('ok')
   const [loadingThemes, setLoadingThemes] = useState(true)
   
   // Fetch dynamic theme data using the same canonical filter mapping as detail pages.
@@ -65,18 +68,23 @@ export default function Overview() {
 
     setLoadingThemes(true)
     fetch(`http://localhost:5001/api/themes-overview?${params}`)
-      .then(r => r.json())
-      .then(data => {
-        setDynamicThemesData(data?.themes ?? data ?? {})
-        setOverviewMeta({
-          status: data?.status ?? null,
-          totalFilteredDocuments: data?.total_filtered_documents ?? null,
-        })
+      .then(async r => {
+        const data = await r.json().catch(() => null)
+        return { ok: r.ok, data }
       })
       .catch(e => {
         console.error(e)
-        setDynamicThemesData({})
-        setOverviewMeta(null)
+        return { offline: true }
+      })
+      .then(result => {
+        const parsed = parseThemesOverview(result)
+        setOverviewKind(parsed.kind)
+        setDynamicThemesData(parsed.themes)
+        setOverviewMeta(
+          parsed.kind === 'ok'
+            ? { status: result.data.status ?? null, totalFilteredDocuments: result.data.total_filtered_documents ?? null }
+            : null,
+        )
       })
       .finally(() => setLoadingThemes(false))
   }, [filters])
@@ -135,7 +143,7 @@ export default function Overview() {
     <main className="max-w-[1280px] mx-auto px-4 py-6 md:px-8 md:py-8 flex flex-col gap-6">
 
       {/* ── Hero Stats Banner ── */}
-      <HeroBanner themes={displayThemes} />
+      {overviewKind === 'ok' && <HeroBanner themes={displayThemes} />}
 
       {/* ── Filters bar ── */}
       <motion.div
@@ -226,6 +234,42 @@ export default function Overview() {
               <h3 className="text-lg font-bold font-headline text-primary">
                 Loading real theme data
               </h3>
+            </div>
+          ) : overviewKind === 'no_summaries' ? (
+            <div className="bg-surface-container-lowest rounded-2xl p-8 md:p-14 text-center shadow-ambient border border-outline-variant/10 flex flex-col items-center gap-3">
+              <span className="material-symbols-outlined text-4xl text-primary mb-1 block">description</span>
+              <h3 className="text-2xl font-bold font-headline text-primary">
+                {/* TODO(i18n): t('overview.empty') */}
+                Er zijn nog geen samenvattingen
+              </h3>
+              <p className="text-sm text-on-surface-variant max-w-[520px]">
+                {/* TODO(i18n): t('overview.emptyBody') */}
+                De antwoorden zijn verwerkt, maar de AI heeft nog geen samenvattingen geschreven. Zodra stap 4 klaar is, zie je hier de thema's met hun aantallen.
+              </p>
+              <Link
+                to="/pipeline-demo?step=insights"
+                className="mt-2 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"
+              >
+                {/* TODO(i18n): t('overview.emptyAction') */}
+                Ga naar stap 4: Samenvattingen schrijven
+                <span className="material-symbols-outlined text-base">arrow_forward</span>
+              </Link>
+            </div>
+          ) : overviewKind === 'not_ready' || overviewKind === 'offline' || overviewKind === 'error' ? (
+            <div className="bg-surface-container-lowest rounded-2xl p-8 text-center shadow-ambient border border-outline-variant/10">
+              <span className="material-symbols-outlined text-4xl text-outline mb-3 block">
+                {overviewKind === 'not_ready' ? 'hourglass_empty' : 'cloud_off'}
+              </span>
+              <p className="text-sm text-on-surface-variant" role="status">
+                {overviewKind === 'not_ready' && (
+                  /* TODO(i18n): t('overview.notReady') */
+                  'De gegevens worden nog voorbereid. Rond stap 2 af en probeer het opnieuw.'
+                )}
+                {overviewKind !== 'not_ready' && (
+                  /* TODO(i18n): t('overview.offline') */
+                  'De analyse-service is niet bereikbaar. Start de app opnieuw.'
+                )}
+              </p>
             </div>
           ) : hasNoMatchingResponses ? (
             <div className="bg-surface-container-lowest rounded-2xl p-8 text-center shadow-ambient border border-outline-variant/10">

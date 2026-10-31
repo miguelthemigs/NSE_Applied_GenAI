@@ -247,11 +247,24 @@ def get_themes_overview():
         if cached_bytes is not None:
             return Response(cached_bytes, mimetype="application/json")
         payload = generation.themes_overview_payload(filters)
+        if payload.get("status") == "not_ready":
+            return jsonify(payload)
         serialized = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         generation.cache_store.set_overview_response(filter_key, serialized)
         return Response(serialized, mimetype="application/json")
+    except retrieval.ClassificationNotReady:
+        return jsonify(_not_ready_overview("vectors_not_ready"))
     except Exception as exc:
-        return jsonify({"status": "error", "error": str(exc)}), 409
+        return jsonify({"status": "error", "error": str(exc)}), 500
+
+
+def _not_ready_overview(reason: str) -> dict:
+    return {
+        "status": "not_ready",
+        "reason": reason,
+        "themes": {},
+        "themes_expected": 7,
+    }
 
 
 def _filters_from_payload(data: dict) -> dict:

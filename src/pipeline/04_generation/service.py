@@ -1262,6 +1262,13 @@ def themes_overview_payload(filters: dict) -> dict:
         if _cache_filters_match(data, {})
     }
     themes = cache
+    if not cached_values:
+        return {
+            "status": "not_ready",
+            "reason": "no_summaries",
+            "themes": {},
+            "themes_expected": 7,
+        }
     if not normalized_filters:
         return {
             "status": "success",
