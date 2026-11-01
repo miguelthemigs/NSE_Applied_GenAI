@@ -1,7 +1,11 @@
 from importlib import import_module
 import json
+from datetime import datetime, timezone
 
+from src.config.model_tiers import tier_for_model
 from src.config.themes import LOW_INFORMATION_THEME
+from src.pipeline import model_downloads
+from src.pipeline.events import stream_event
 from src.config.settings import (
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_PROVIDER,
@@ -36,6 +40,22 @@ SUBTHEME_MANIFEST_FIELD = "subtheme_manifest"
 MAX_SUBTHEMES = 5
 
 
+def _reraise_fatal(exc: Exception) -> None:
+    """Per-theme handlers skip and continue; a missing model or a lost
+    llama-server must end the run instead (every next theme would fail too)."""
+    if isinstance(exc, (model_downloads.ModelNotDownloadedError, LocalModelConnectionError)):
+        raise exc
+
+
+def _nothing_generated_event(attempted: int) -> str:
+    """A run that tried and wrote no summary at all is a failure, not success."""
+    return stream_event(
+        "error",
+        code="error.backend",
+        message=f"No summary could be written: all {attempted} attempts failed (see the skipped items above).",
+    )
+
+
 def _ensure_llm_eligible_theme(theme_name: str) -> None:
     if theme_name == LOW_INFORMATION_THEME:
         raise ValueError(
@@ -48,6 +68,12 @@ def _model_generation_settings(provider: str, llm_model: str) -> dict | None:
     if selected not in {"llama.cpp", "llamacpp", "llama-cpp"}:
         return None
     return llama_cpp_models.resolve_llama_cpp_model(llm_model).generation.to_dict()
+
+
+def _stamped(entry: dict) -> dict:
+    """Add a UTC ISO `generated_at` to a NEW cache entry (old entries read as null)."""
+    entry["generated_at"] = datetime.now(timezone.utc).isoformat()
+    return entry
 
 
 def _normalized_filters(filters: dict | None) -> dict:
@@ -581,7 +607,7 @@ def generate_theme_summary(
             f"{theme_name}."
         )
 
-        cache[cache_key] = response_data
+        cache[cache_key] = _stamped(response_data)
         save_cache(cache)
         print(f"[LLM] Saved summary to cache for: {theme_name}")
 
@@ -712,6 +738,7 @@ def precompute_insights_stream(
         if json.dumps(combo, sort_keys=True) != baseline_key
     ]
     client = None
+    attempted = generated = 0
     try:
         llm_generation_settings = _model_generation_settings(provider, llm_model)
         cache = load_cache()
@@ -747,38 +774,17 @@ def precompute_insights_stream(
         ):
             for i, theme in enumerate(themes):
                 theme_name = theme.get("name")
-                yield json.dumps(
-                    {
-                        "status": "progress",
-                        "theme": theme_name,
-                        "progress": int(((i + 1) / len(themes)) * 100),
-                        "message": f"Loaded cached insights for {theme_name}",
-                    }
-                ) + "\n"
-            yield json.dumps(
-                {
-                    "status": "success",
-                    "message": "All insights already cached!",
-                    "progress": 100,
-                }
-            ) + "\n"
+                yield stream_event("progress", stage="read", message=f"Loaded cached insights for {theme_name}", progress=int(((i + 1) / len(themes)) * 100), theme=theme_name)
+            yield stream_event("success", message="All insights already cached!", progress=100)
             return
 
-        yield json.dumps(
-            {
-                "status": "progress",
-                "progress": 0,
-                "message": (
-                    f"Cache plan: {len(cached_theme_names)} cached, "
+        yield stream_event("progress", stage="read", message=f"Cache plan: {len(cached_theme_names)} cached, "
                     f"{len(missing_theme_names)} to generate"
                     + (
                         f" ({', '.join(missing_theme_names)})"
                         if missing_theme_names
                         else ""
-                    )
-                ),
-            }
-        ) + "\n"
+                    ), progress=0)
 
         # Filter grid upfront with one bulk metadata fetch — avoids per-combo ChromaDB calls later.
         valid_grid = retrieval.filter_valid_combos(normalized_grid) if normalized_grid else []
@@ -792,39 +798,16 @@ def precompute_insights_stream(
         for i, theme in enumerate(baseline_work):
             theme_name = theme.get("name")
 
-            yield json.dumps(
-                {
-                    "status": "progress",
-                    "theme": theme_name,
-                    "progress": _pct(i),
-                    "message": (
-                        f"Generating missing theme {i + 1}/{len(baseline_work)}: "
-                        f"{theme_name}"
-                    ),
-                }
-            ) + "\n"
+            yield stream_event("progress", stage="process", message=f"Generating missing theme {i + 1}/{len(baseline_work)}: "
+                        f"{theme_name}", progress=_pct(i), theme=theme_name)
 
-            yield json.dumps(
-                {
-                    "status": "progress",
-                    "theme": theme_name,
-                    "progress": _pct(i + 0.5),
-                    "message": (
-                        f"{llm_model} is generating hierarchical summary for "
-                        f"{theme_name}..."
-                    ),
-                }
-            ) + "\n"
+            yield stream_event("progress", stage="process", message=f"{llm_model} is generating hierarchical summary for "
+                        f"{theme_name}...", progress=_pct(i + 0.5), theme=theme_name)
 
+            attempted += 1
             try:
                 if client is None:
-                    yield json.dumps(
-                        {
-                            "status": "progress",
-                            "progress": 1,
-                            "message": f"Checking {provider} model '{llm_model}'...",
-                        }
-                    ) + "\n"
+                    yield stream_event("progress", stage="load", message=f"Checking {provider} model '{llm_model}'...", progress=1)
                     client = get_llm_client(provider)
                     client.ensure_model_available(
                         llm_model,
@@ -842,16 +825,11 @@ def precompute_insights_stream(
                     llm_generation_settings=llm_generation_settings,
                     max_documents=max_documents,
                 )
-                cache[_cache_key(theme_name, filters)] = response_data
+                cache[_cache_key(theme_name, filters)] = _stamped(response_data)
+                generated += 1
             except Exception as exc:
-                yield json.dumps(
-                    {
-                        "status": "progress",
-                        "theme": theme_name,
-                        "message": f"Skipped {theme_name}: {str(exc)}",
-                        "progress": _pct(i + 1),
-                    }
-                ) + "\n"
+                _reraise_fatal(exc)
+                yield stream_event("progress", stage="process", message=f"Skipped {theme_name}: {str(exc)}", progress=_pct(i + 1), theme=theme_name)
                 continue
             save_cache(cache)
 
@@ -878,26 +856,12 @@ def precompute_insights_stream(
                         cache_key=sub_key,
                     ):
                         continue
-                    yield json.dumps(
-                        {
-                            "status": "progress",
-                            "theme": theme_name,
-                            "progress": _pct(i + 1),
-                            "message": (
-                                f"Sub-theme {st_idx + 1}/{len(subthemes)}: "
-                                f"{subtheme}"
-                            ),
-                        }
-                    ) + "\n"
+                    yield stream_event("progress", stage="process", message=f"Sub-theme {st_idx + 1}/{len(subthemes)}: "
+                                f"{subtheme}", progress=_pct(i + 1), theme=theme_name)
+                    attempted += 1
                     try:
                         if client is None:
-                            yield json.dumps(
-                                {
-                                    "status": "progress",
-                                    "progress": 1,
-                                    "message": f"Checking {provider} model '{llm_model}'...",
-                                }
-                            ) + "\n"
+                            yield stream_event("progress", stage="load", message=f"Checking {provider} model '{llm_model}'...", progress=1)
                             client = get_llm_client(provider)
                             client.ensure_model_available(
                                 llm_model,
@@ -918,28 +882,19 @@ def precompute_insights_stream(
                             theme_query=subtheme,
                             evidence_ids=manifest.get("evidence_ids") or [],
                         )
-                        subtheme_cache[sub_key] = sub_data
+                        subtheme_cache[sub_key] = _stamped(sub_data)
+                        generated += 1
                         save_subtheme_cache(subtheme_cache)
                     except Exception as exc:
-                        yield json.dumps(
-                            {
-                                "status": "progress",
-                                "theme": theme_name,
-                                "message": f"Sub-theme skipped {subtheme}: {str(exc)}",
-                                "progress": _pct(i + 1),
-                            }
-                        ) + "\n"
+                        _reraise_fatal(exc)
+                        yield stream_event("progress", stage="process", message=f"Sub-theme skipped {subtheme}: {str(exc)}", progress=_pct(i + 1), theme=theme_name)
                         continue
 
         # Optional pre-cache pass: cross-product of filter combinations.
         if valid_grid:
             skipped = len(normalized_grid) - len(valid_grid)
             if skipped:
-                yield json.dumps({
-                    "status": "progress",
-                    "message": f"Skipped {skipped} empty filter combinations (no matching documents)",
-                    "progress": _pct(len(themes)),
-                }) + "\n"
+                yield stream_event("progress", stage="process", message=f"Skipped {skipped} empty filter combinations (no matching documents)", progress=_pct(len(themes)))
             total_combos = len(valid_grid)
             for combo_idx, combo in enumerate(valid_grid):
                 combo_label = ", ".join(f"{k}={v}" for k, v in combo.items()) or "baseline"
@@ -961,40 +916,17 @@ def precompute_insights_stream(
                         )
                         is not None
                     ):
-                        yield json.dumps(
-                            {
-                                "status": "progress",
-                                "theme": theme_name,
-                                "progress": base_progress,
-                                "message": (
-                                    f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
-                                    f"Cached: {theme_name}"
-                                ),
-                            }
-                        ) + "\n"
+                        yield stream_event("progress", stage="process", message=f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
+                                    f"Cached: {theme_name}", progress=base_progress, theme=theme_name)
                         continue
 
-                    yield json.dumps(
-                        {
-                            "status": "progress",
-                            "theme": theme_name,
-                            "progress": base_progress,
-                            "message": (
-                                f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
-                                f"Generating {theme_name}..."
-                            ),
-                        }
-                    ) + "\n"
+                    yield stream_event("progress", stage="process", message=f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
+                                f"Generating {theme_name}...", progress=base_progress, theme=theme_name)
 
+                    attempted += 1
                     try:
                         if client is None:
-                            yield json.dumps(
-                                {
-                                    "status": "progress",
-                                    "progress": 1,
-                                    "message": f"Checking {provider} model '{llm_model}'...",
-                                }
-                            ) + "\n"
+                            yield stream_event("progress", stage="load", message=f"Checking {provider} model '{llm_model}'...", progress=1)
                             client = get_llm_client(provider)
                             client.ensure_model_available(
                                 llm_model,
@@ -1012,19 +944,12 @@ def precompute_insights_stream(
                             llm_generation_settings=llm_generation_settings,
                             max_documents=max_documents,
                         )
-                        cache[_cache_key(theme_name, combo)] = response_data
+                        cache[_cache_key(theme_name, combo)] = _stamped(response_data)
+                        generated += 1
                     except Exception as exc:
-                        yield json.dumps(
-                            {
-                                "status": "progress",
-                                "theme": theme_name,
-                                "message": (
-                                    f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
-                                    f"Skipped {theme_name}: {str(exc)}"
-                                ),
-                                "progress": base_progress,
-                            }
-                        ) + "\n"
+                        _reraise_fatal(exc)
+                        yield stream_event("progress", stage="process", message=f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
+                                    f"Skipped {theme_name}: {str(exc)}", progress=base_progress, theme=theme_name)
                         continue
                     save_cache(cache)
 
@@ -1046,26 +971,12 @@ def precompute_insights_stream(
                                 cache_key=sub_key,
                             ):
                                 continue
-                            yield json.dumps(
-                                {
-                                    "status": "progress",
-                                    "theme": theme_name,
-                                    "progress": base_progress,
-                                    "message": (
-                                        f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
-                                        f"Sub-theme {st_idx + 1}/{len(subthemes)}: {subtheme}"
-                                    ),
-                                }
-                            ) + "\n"
+                            yield stream_event("progress", stage="process", message=f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
+                                        f"Sub-theme {st_idx + 1}/{len(subthemes)}: {subtheme}", progress=base_progress, theme=theme_name)
+                            attempted += 1
                             try:
                                 if client is None:
-                                    yield json.dumps(
-                                        {
-                                            "status": "progress",
-                                            "progress": 1,
-                                            "message": f"Checking {provider} model '{llm_model}'...",
-                                        }
-                                    ) + "\n"
+                                    yield stream_event("progress", stage="load", message=f"Checking {provider} model '{llm_model}'...", progress=1)
                                     client = get_llm_client(provider)
                                     client.ensure_model_available(
                                         llm_model,
@@ -1088,32 +999,26 @@ def precompute_insights_stream(
                                     theme_query=subtheme,
                                     evidence_ids=manifest.get("evidence_ids") or [],
                                 )
-                                subtheme_cache[sub_key] = sub_data
+                                subtheme_cache[sub_key] = _stamped(sub_data)
+                                generated += 1
                                 save_subtheme_cache(subtheme_cache)
                             except Exception as exc:
-                                yield json.dumps(
-                                    {
-                                        "status": "progress",
-                                        "theme": theme_name,
-                                        "message": (
-                                            f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
-                                            f"Sub-theme skipped {subtheme}: {str(exc)}"
-                                        ),
-                                        "progress": base_progress,
-                                    }
-                                ) + "\n"
+                                _reraise_fatal(exc)
+                                yield stream_event("progress", stage="process", message=f"[combo {combo_idx + 1}/{total_combos}: {combo_label}] "
+                                            f"Sub-theme skipped {subtheme}: {str(exc)}", progress=base_progress, theme=theme_name)
                                 continue
 
-        yield json.dumps(
-            {
-                "status": "success",
-                "message": "All insights generated!",
-                "progress": 100,
-            }
-        ) + "\n"
+        if attempted and not generated:
+            yield _nothing_generated_event(attempted)
+            return
+        yield stream_event("success", message="All insights generated!", progress=100)
 
+    except model_downloads.ModelNotDownloadedError as exc:
+        yield stream_event("error", code="error.model_missing", message=str(exc))
+    except LocalModelConnectionError as exc:
+        yield stream_event("error", code="error.llm_unavailable", message=str(exc))
     except Exception as exc:
-        yield json.dumps({"status": "error", "message": str(exc)}) + "\n"
+        yield stream_event("error", code="error.backend", message=str(exc))
     finally:
         if client is not None:
             client.unload(llm_model)
@@ -1142,6 +1047,7 @@ def precompute_subthemes_stream(
 
     all_combos = [filters] + normalized_grid
     client = None
+    attempted = generated = 0
     try:
         llm_generation_settings = _model_generation_settings(provider, llm_model)
         main_cache = load_cache()
@@ -1187,10 +1093,10 @@ def precompute_subthemes_stream(
                     )
 
         if not work_items:
-            yield json.dumps({"status": "success", "message": "All subtheme insights already cached!", "progress": 100}) + "\n"
+            yield stream_event("success", message="All subtheme insights already cached!", progress=100)
             return
 
-        yield json.dumps({"status": "progress", "progress": 1, "message": f"Checking {provider} model '{llm_model}'..."}) + "\n"
+        yield stream_event("progress", stage="load", message=f"Checking {provider} model '{llm_model}'...", progress=1)
 
         collection = retrieval.get_collection()
         client = get_llm_client(provider)
@@ -1200,12 +1106,8 @@ def precompute_subthemes_stream(
         for idx, (theme_name, subtheme, combo, sub_key, evidence_ids) in enumerate(work_items):
             progress = min(99, int((idx / total) * 100))
             combo_label = ", ".join(f"{k}={v}" for k, v in combo.items()) or "baseline"
-            yield json.dumps({
-                "status": "progress",
-                "theme": theme_name,
-                "progress": progress,
-                "message": f"[{combo_label}] Generating subtheme: {subtheme} ({idx + 1}/{total})",
-            }) + "\n"
+            yield stream_event("progress", stage="process", message=f"[{combo_label}] Generating subtheme: {subtheme} ({idx + 1}/{total})", progress=progress, theme=theme_name)
+            attempted += 1
             try:
                 sub_data = _generate_theme_payload(
                     client=client,
@@ -1219,7 +1121,8 @@ def precompute_subthemes_stream(
                     evidence_ids=evidence_ids,
                     max_documents=max_documents,
                 )
-                subtheme_cache[sub_key] = sub_data
+                subtheme_cache[sub_key] = _stamped(sub_data)
+                generated += 1
                 save_subtheme_cache(subtheme_cache)
                 quote_count = len(sub_data.get("quotes") or [])
                 main_key = _cache_key(theme_name, combo)
@@ -1230,18 +1133,21 @@ def precompute_subthemes_stream(
                             break
                     save_cache(main_cache)
             except Exception as exc:
-                yield json.dumps({
-                    "status": "progress",
-                    "theme": theme_name,
-                    "progress": progress,
-                    "message": f"[{combo_label}] Skipped {subtheme}: {str(exc)}",
-                }) + "\n"
+                _reraise_fatal(exc)
+                yield stream_event("progress", stage="process", message=f"[{combo_label}] Skipped {subtheme}: {str(exc)}", progress=progress, theme=theme_name)
                 continue
 
-        yield json.dumps({"status": "success", "message": "All subtheme insights generated!", "progress": 100}) + "\n"
+        if attempted and not generated:
+            yield _nothing_generated_event(attempted)
+            return
+        yield stream_event("success", message="All subtheme insights generated!", progress=100)
 
+    except model_downloads.ModelNotDownloadedError as exc:
+        yield stream_event("error", code="error.model_missing", message=str(exc))
+    except LocalModelConnectionError as exc:
+        yield stream_event("error", code="error.llm_unavailable", message=str(exc))
     except Exception as exc:
-        yield json.dumps({"status": "error", "message": str(exc)}) + "\n"
+        yield stream_event("error", code="error.backend", message=str(exc))
     finally:
         if client is not None:
             client.unload(llm_model)
@@ -1262,6 +1168,13 @@ def themes_overview_payload(filters: dict) -> dict:
         if _cache_filters_match(data, {})
     }
     themes = cache
+    if not cached_values:
+        return {
+            "status": "not_ready",
+            "reason": "no_summaries",
+            "themes": {},
+            "themes_expected": 7,
+        }
     if not normalized_filters:
         return {
             "status": "success",
@@ -1288,3 +1201,31 @@ def themes_overview_payload(filters: dict) -> dict:
         "total_filtered_documents": total_filtered_documents,
         "themes": themes,
     }
+
+
+def start_llm_stream(model_name: str, provider: str = DEFAULT_LLM_PROVIDER):
+    """NDJSON for starting the local LLM: download events, then `load`, then success.
+
+    One attempt, no retries. If the server can't start within
+    LLAMA_CPP_STARTUP_TIMEOUT (counted only once the files are local), or is
+    missing or exits early, the stream ends with `error.llm_unavailable`.
+    """
+    model = llama_cpp_models.resolve_llama_cpp_model(model_name)
+    tier = tier_for_model("insights", model.id)
+    downloaded = yield from model_downloads.download_events(
+        model.repo_id, tier, allow_patterns=model.download_patterns
+    )
+    if not downloaded:
+        return
+    yield stream_event("progress", stage="load", params={"tier": tier, "model": model.id},
+                       message=f"Starting {provider} with '{model.id}'...")
+    try:
+        get_llm_client(provider).ensure_model_available(model.id, allow_download=True)
+    except model_downloads.ModelNotDownloadedError as exc:
+        yield stream_event("error", code="error.model_missing", params={"tier": tier, "model": model.id}, error=str(exc))
+        return
+    except Exception as exc:
+        print(f"[LLAMA_CPP START ERROR] {exc}")
+        yield stream_event("error", code="error.llm_unavailable", params={"tier": tier, "model": model.id}, error=str(exc))
+        return
+    yield stream_event("success", params={"tier": tier, "model": model.id}, message=f"{model.id} is ready")

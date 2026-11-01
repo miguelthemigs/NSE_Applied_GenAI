@@ -191,6 +191,10 @@ def expected_classification_config(embedding_model_id: str):
     return theme_classifier.embedding_classification_config(embedding_model_id)
 
 
+class ClassificationNotReady(RuntimeError):
+    """The vector DB lacks a compatible persisted theme classification."""
+
+
 def validate_theme_classification(collection):
     metadata = getattr(collection, "metadata", None) or {}
     embedding_model_id = collection_embedding_model(collection)
@@ -215,7 +219,7 @@ def validate_theme_classification(collection):
         mismatches.append("embedding_model")
     if mismatches:
         mismatch_list = ", ".join(sorted(set(mismatches)))
-        raise RuntimeError(
+        raise ClassificationNotReady(
             "Vector database is missing compatible persisted theme "
             f"classification ({mismatch_list}). Delete it and run a fresh "
             "vector build before generating dashboard summaries."

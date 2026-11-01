@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from src.config.themes import THEME_EMBEDDING_DEFINITIONS
+from src.pipeline.events import STAGES
 
 
 theme_classifier = import_module("src.pipeline.02_embedding.theme_classifier")
@@ -153,7 +154,11 @@ class ThemeClassificationTests(unittest.TestCase):
                     "VECTOR_CHECKPOINT",
                     checkpoint_path,
                 ),
-                mock.patch.object(vector_builder, "CACHE_FILE", cache_path),
+                mock.patch.object(
+                    import_module("src.pipeline.04_generation.cache"),
+                    "CACHE_FILE",
+                    cache_path,
+                ),
                 mock.patch.object(
                     vector_builder,
                     "load_embedding_model",
@@ -189,7 +194,8 @@ class ThemeClassificationTests(unittest.TestCase):
 
             self.assertIsNotNone(first_batch_event)
             self.assertEqual(first_batch_event["progress"], 94)
-            self.assertFalse(cache_path.exists())
+            # An interrupted build must keep the existing summaries.
+            self.assertTrue(cache_path.exists())
             interrupted_collection = chromadb.PersistentClient(
                 path=str(db_path)
             ).get_collection("survey_responses")
@@ -203,13 +209,19 @@ class ThemeClassificationTests(unittest.TestCase):
             self.assertTrue(checkpoint_path.exists())
 
             second_model = BuildEmbeddingModel()
+            insight_cache = import_module("src.pipeline.04_generation.cache")
+            insight_cache.set_overview_response("k", b"stale")
             with (
                 mock.patch.object(
                     vector_builder,
                     "VECTOR_CHECKPOINT",
                     checkpoint_path,
                 ),
-                mock.patch.object(vector_builder, "CACHE_FILE", cache_path),
+                mock.patch.object(
+                    import_module("src.pipeline.04_generation.cache"),
+                    "CACHE_FILE",
+                    cache_path,
+                ),
                 mock.patch.object(
                     vector_builder,
                     "load_embedding_model",
@@ -240,6 +252,9 @@ class ThemeClassificationTests(unittest.TestCase):
                 ]
 
             self.assertEqual(events[-1]["status"], "success", events)
+            # A successful build invalidates the stale summaries.
+            self.assertFalse(cache_path.exists())
+            self.assertIsNone(insight_cache.get_overview_response("k"))
             self.assertEqual(second_model.document_batches, [["Teacher feedback response 100"]])
             completed = chromadb.PersistentClient(
                 path=str(db_path)
@@ -289,7 +304,11 @@ class ThemeClassificationTests(unittest.TestCase):
             )
             with (
                 mock.patch.object(vector_builder, "VECTOR_CHECKPOINT", checkpoint_path),
-                mock.patch.object(vector_builder, "CACHE_FILE", cache_path),
+                mock.patch.object(
+                    import_module("src.pipeline.04_generation.cache"),
+                    "CACHE_FILE",
+                    cache_path,
+                ),
                 mock.patch.object(
                     vector_builder,
                     "_classification_for_embedding_model",
@@ -323,6 +342,10 @@ class ThemeClassificationTests(unittest.TestCase):
                 ]
 
                 self.assertEqual(events[-1]["status"], "success", events)
+                progress_events = [e for e in events if e["status"] == "progress"]
+                self.assertTrue(progress_events)
+                for event in progress_events:
+                    self.assertIn(event.get("stage"), STAGES, event)
                 load_reranker.assert_not_called()
                 collection = chromadb.PersistentClient(
                     path=str(db_path)
@@ -342,6 +365,9 @@ class ThemeClassificationTests(unittest.TestCase):
                 ]
 
             self.assertEqual(rerank_events[-1]["status"], "success", rerank_events)
+            for event in rerank_events:
+                if event["status"] == "progress":
+                    self.assertIn(event.get("stage"), STAGES, event)
             self.assertGreater(rerank_events[-1]["reranked_documents"], 0)
             self.assertGreater(rerank_events[-1]["changed_primary"], 0)
             completed = chromadb.PersistentClient(
@@ -351,6 +377,8 @@ class ThemeClassificationTests(unittest.TestCase):
                 completed.metadata["theme_reranker_model"],
                 "fake-reranker",
             )
+            # A reranked collection is still a ready vector DB.
+            self.assertTrue(vector_builder.vector_db_is_ready(str(db_path)))
             updated = completed.get(include=["metadatas"])["metadatas"]
             self.assertTrue(
                 any(

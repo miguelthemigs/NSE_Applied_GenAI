@@ -1,0 +1,247 @@
+<title>NSE Insights UI Review</title>
+<style id="page-style">
+/* Layout: one reading column (~70ch) with wide exhibits (tables, screenshots) breaking out to 1040px. */
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --fg:#17212b; --muted:#5b6673; --line:#dde2e8;
+  --accent:#0f3d63; --accent-soft:#e6eef6;
+  --good:#1f7a4d; --good-bg:#e5f4ec; --warn:#9a6200; --warn-bg:#fdf3dd; --bad:#b3261e; --bad-bg:#fbe9e7;
+  --f-display:"Literata", Georgia, serif; --f-body:"Figtree", system-ui, sans-serif; --f-mono:"IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11161c; --surface:#18202a; --fg:#e6ebf0; --muted:#9aa6b2; --line:#2b3643;
+  --accent:#8cc0ec; --accent-soft:#1c2c3c;
+  --good:#6fd39e; --good-bg:#143025; --warn:#f0c46b; --warn-bg:#35290f; --bad:#f28b82; --bad-bg:#3a1917; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11161c; --surface:#18202a; --fg:#e6ebf0; --muted:#9aa6b2; --line:#2b3643;
+  --accent:#8cc0ec; --accent-soft:#1c2c3c;
+  --good:#6fd39e; --good-bg:#143025; --warn:#f0c46b; --warn-bg:#35290f; --bad:#f28b82; --bad-bg:#3a1917; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--f-body);margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding-inline:20px;padding-block:28px 80px}
+article{display:block}
+article > *{max-width:70ch}
+article > .wide{max-width:none}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;line-height:1.2;color:var(--fg)}
+h1{font-size:2.4rem;margin:.2em 0 .3em;font-weight:600}
+h2{font-size:1.55rem;margin:2.4em 0 .5em;font-weight:600;padding-top:.8em;border-top:1px solid var(--line)}
+h3{font-size:1.15rem;margin:1.6em 0 .3em;font-weight:600}
+p,li{max-width:70ch}
+.eyebrow{font:600 .9rem/1.3 var(--f-body);color:var(--accent)}
+.byline{color:var(--muted);font-size:.9rem}
+.lead{font-size:1.2rem;line-height:1.5}
+a{color:var(--accent)}
+code,.mono{font-family:var(--f-mono);font-size:.86em;background:var(--accent-soft);padding:.1em .35em;border-radius:4px}
+.table-scroll{overflow-x:auto;margin:1em 0}
+table{border-collapse:collapse;width:100%;font-size:.93rem;background:var(--surface)}
+th,td{text-align:left;vertical-align:top;padding:.65em .8em;border-bottom:1px solid var(--line)}
+th{font-weight:600;font-size:.85rem;color:var(--muted);background:var(--bg)}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.grade{display:inline-block;min-width:2.2em;text-align:center;font-weight:700;border-radius:6px;padding:.1em .45em;font-variant-numeric:tabular-nums}
+.g-good{background:var(--good-bg);color:var(--good)} .g-warn{background:var(--warn-bg);color:var(--warn)} .g-bad{background:var(--bad-bg);color:var(--bad)}
+.bar{display:inline-block;vertical-align:middle;width:90px;height:8px;border-radius:4px;background:var(--line);margin-left:.5em;overflow:hidden}
+.bar > i{display:block;height:100%;background:var(--accent)}
+.top3{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin:1.2em 0;padding:0;list-style:none;counter-reset:t}
+.top3 li{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0;counter-increment:t}
+.top3 li::before{content:counter(t);display:block;font:600 1.6rem/1 var(--f-display);color:var(--accent);margin-bottom:6px}
+.top3 b{display:block;margin-bottom:2px}
+figure{margin:1.2em 0}
+figure img{display:block;border:1px solid var(--line);border-radius:8px;max-width:100%}
+figcaption{color:var(--muted);font-size:.86rem;margin-top:.4em}
+.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+.shots figure{margin:0;min-width:0}
+.mock{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:10px;min-width:0}
+.mock-opt{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;gap:10px;align-items:flex-start}
+.mock-opt.sel{border-color:var(--accent);background:var(--accent-soft)}
+.dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--muted);flex:none;margin-top:4px}
+.sel .dot{border-color:var(--accent);background:radial-gradient(var(--accent) 45%,transparent 50%)}
+.mock-opt small{display:block;color:var(--muted)}
+.stepper{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.92rem}
+.stepper span{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.s-done{color:var(--good)} .s-now{color:var(--accent);font-weight:600} .s-todo{color:var(--muted)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+.two > *{min-width:0}
+.note{background:var(--accent-soft);padding:12px 16px;border-radius:8px}
+/* editing toolbar */
+.toolbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:8px 20px;background:var(--bg);border-bottom:1px solid var(--line);font-size:.85rem}
+.toolbar button{font:600 .85rem var(--f-body);border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:6px;padding:6px 12px;cursor:pointer}
+.toolbar button.primary{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.toolbar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#status{color:var(--muted);margin-right:auto}
+article[contenteditable="true"]{outline:2px dashed var(--accent);outline-offset:12px;border-radius:4px}
+@media (max-width:520px){h1{font-size:1.8rem}.lead{font-size:1.08rem}}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Literata:opsz,wght@7..72,500;7..72,600&family=IBM+Plex+Mono&display=swap">
+<div class="toolbar" id="toolbar"><span id="status">Read mode</span><button id="edit-btn" type="button">Edit text</button><button id="save-btn" type="button" class="primary" hidden>Save</button><button id="cancel-btn" type="button" hidden>Cancel</button></div>
+<div class="wrap">
+<article id="doc">
+<p class="eyebrow">NSE Insights · UI/UX review for stakeholders</p>
+<h1>The app works, but it talks like an engineer</h1>
+<p class="byline">30 September 2026 · Based on hands-on testing notes and a walkthrough of the running app</p>
+<p class="lead">Every step of the pipeline does its job. What holds the app back is how it presents that work: it switches between Dutch and English, asks non-technical users to choose AI models by their technical names, and rarely says what it just finished. A handful of focused changes would make it usable by the people it is built for.</p>
+
+<h2>The three things that matter most</h2>
+<ol class="top3">
+<li><b>No mixed languages, plain words.</b>One screen shows “Vorige run beschikbaar”, “Drop your CSV file here” and “Check uitvoeren” side by side. Terms like <i>Vector DB</i>, <i>reranker</i>, <i>GGUF</i> and <i>not_run</i> mean nothing to our users.</li>
+<li><b>Always show what happened.</b>After a step finishes, the app only offers to run it again. Model downloads show no sign of progress. After a restart, nothing says your earlier work is still there, even though it is.</li>
+<li><b>Hide the machinery.</b>The Insights step offers 4 generate buttons, 5 filter combinations, a slider and 3 model choices. Most users need one button with good defaults, and an “Advanced” section for the rest.</li>
+</ol>
+
+<h2>How we reviewed it</h2>
+<p>We combined three sources. First, notes taken while using the app as a first-time user. Second, a walkthrough of every screen in the running app, captured in the screenshots below. Third, two design checklists: the UI/UX Pro Max guidelines (progress feedback, empty states, consistency) and the Impeccable design review, which also scanned the code and flagged 18 visual style issues.</p>
+<p>Grades run from 1 (blocks the user) to 5 (excellent). A typical first working version scores between 2 and 3.</p>
+
+<h2>Scorecard</h2>
+<div class="table-scroll wide"><table>
+<thead><tr><th>Area</th><th>Grade</th><th>What we saw</th></tr></thead>
+<tbody>
+<tr><td>Results after anonymising</td><td class="num"><span class="grade g-good">4</span><span class="bar"><i style="width:80%"></i></span></td><td>The verification list is clear: 288 names, 16 locations, 73 personal numbers and 32 health details removed, with 1 possible miss highlighted in yellow.</td></tr>
+<tr><td>Progress while working</td><td class="num"><span class="grade g-warn">2.5</span><span class="bar"><i style="width:50%"></i></span></td><td>Building the search index has a good four-stage bar. Elsewhere, the finished anonymisation still shows “Processing Stream 0%”, and model downloads are invisible.</td></tr>
+<tr><td>Remembering work after a restart</td><td class="num"><span class="grade g-warn">2.5</span><span class="bar"><i style="width:50%"></i></span></td><td>The data is saved: the backend confirms the anonymised file and search index exist. The screen doesn’t show it. Step tabs have no checkmarks, and the Overview shows 0 comments with “error” as the top theme.</td></tr>
+<tr><td>Guidance through the steps</td><td class="num"><span class="grade g-bad">2</span><span class="bar"><i style="width:40%"></i></span></td><td>All five steps can be opened at any time, in any order. Nothing says which step is next or why.</td></tr>
+<tr><td>Visual consistency</td><td class="num"><span class="grade g-bad">2</span><span class="bar"><i style="width:40%"></i></span></td><td>A navy brand in the header, generic grey and blue on the pipeline page, a different gradient colour per step, dark panels dropped into a light page, and emoji next to proper icons.</td></tr>
+<tr><td>Language and wording</td><td class="num"><span class="grade g-bad">1.5</span><span class="bar"><i style="width:30%"></i></span></td><td>Dutch and English mixed on the same card. Model names such as “Gemma 4 12B QAT, Unsloth GGUF” and status values like <code>not_run</code> are shown as-is.</td></tr>
+</tbody></table></div>
+
+<h2>What we found, screen by screen</h2>
+
+<h3>Across the whole pipeline</h3>
+<ul>
+<li><b>Step names describe the technology, not the job.</b> We suggest: <i>Anonymize Data</i> → Remove personal details; <i>Build Vector DB</i> → Prepare answers for search; <i>Rerank Themes</i> → Double-check themes; <i>Generate Insights</i> → Write summaries; <i>AI Query</i> → Ask a question.</li>
+<li><b>No sense of where you are.</b> The tabs look the same whether a step is done or not. Replace them with a stepper that marks finished steps and points to the next one.</li>
+</ul>
+<div class="mock wide" aria-label="Example of a stepper">
+<div class="stepper"><span class="s-done">✓ Remove personal details</span><span class="s-done">✓ Prepare for search</span><span class="s-now">● Double-check themes</span><span class="s-todo">○ Write summaries</span><span class="s-todo">○ Ask a question</span></div>
+<small style="color:var(--muted)">Suggested stepper: finished steps stay green after a restart, and the current step is highlighted.</small>
+</div>
+
+<h3>Choosing an AI model (Build search index and Insights steps)</h3>
+<p>Users are asked to pick between “Octen Embedding 0.6B / 4B / 8B” and “Gemma 4 E2B / E4B / 12B QAT”. The descriptions mention “dynamic Q4”, “MTP” and “Hugging Face”. A stakeholder can’t make this choice, so we should make it for them and explain the trade-off in everyday terms.</p>
+<div class="two wide">
+<div class="mock" aria-label="Example of plain-language model choice">
+<div class="mock-opt"><span class="dot"></span><div><b>Quick</b><small>Good for a first look. Smallest download (2.6 GB).</small></div></div>
+<div class="mock-opt sel"><span class="dot"></span><div><b>Balanced (recommended)</b><small>Best mix of speed and quality for most reports.</small></div></div>
+<div class="mock-opt"><span class="dot"></span><div><b>Most thorough</b><small>Best quality for the final report. Slowest.</small></div></div>
+<small style="color:var(--muted)">Technical model names move to an “Advanced” section.</small>
+</div>
+<div>
+<p><b>When a model is not on the computer yet</b>, the app downloads it without saying so. Show a clear message such as “Downloading the Balanced model, 1.2 of 5 GB”, with a progress bar and an estimate.</p>
+</div>
+</div>
+
+<h3>Remove personal details (Anonymise)</h3>
+<div class="shots wide">
+<figure><img src="img/anonymize.jpg" alt="Anonymise screen mixing Dutch and English text" loading="lazy"><figcaption>One card, two languages: “Vorige run beschikbaar”, “Drop your CSV file here”, “Check uitvoeren”, “Overslaan”.</figcaption></figure>
+<figure><img src="img/anon_results.jpg" alt="Anonymisation results with a dark processing panel above the verification list" loading="lazy"><figcaption>The verification list works well. The dark “Processing Stream 0%” panel above it is leftover from the run and contradicts it.</figcaption></figure>
+</div>
+<ul>
+<li><b>Works well:</b> results are split by type (names, locations, personal numbers, health), and the one possible miss is easy to spot.</li>
+<li><b>Mixed light and dark:</b> the progress panel is dark while the rest is light. Pick one light style for the whole app.</li>
+<li><b>The three sub-steps look like separate apps.</b> Group them visually as parts of one step (Upload → Choose columns → Check results), with one shared frame.</li>
+<li><b>After finishing:</b> replace the 0% panel with a short summary, such as “Done. 300 answers checked, 409 personal details removed, 1 to review.”</li>
+</ul>
+
+<h3>Prepare answers for search (Vector DB)</h3>
+<figure class="wide"><img src="img/vec_running.jpg" alt="Dark vector build panel showing technical log text" loading="lazy" style="max-width:720px"><figcaption>The four-stage bar (Load model, Read data, Encode, Save) is the best progress display in the app. The log text under “System status” is meant for developers.</figcaption></figure>
+<ul>
+<li>Keep the four-stage progress bar and reuse it in every step.</li>
+<li>Move log lines such as “Loading Octen/Octen-Embedding-0.6B via SentenceTransformer on Apple GPU (mps)” behind a “Show details” link.</li>
+<li>Same light/dark clash as the Anonymise step.</li>
+</ul>
+
+<h3>Double-check themes (Theme reranker)</h3>
+<p>A non-technical user has no idea what a reranker is. The screen shows a raw model ID (<code>zeroentropy/zerank-2-reranker</code>), a status of <code>not_run</code> and a model called “disabled”.</p>
+<p class="note">Suggested explanation on screen: “Some answers could fit more than one theme. This step lets a second, more careful AI read those answers again and pick the best theme. Answers that were already clear are left alone.”</p>
+<p>We also suggest showing how many answers are affected, and translating statuses into words: “Not done yet”, “Done”, “Switched off”.</p>
+
+<h3>Write summaries (Insights)</h3>
+<figure class="wide"><img src="img/insights.jpg" alt="Insights screen with many options and four coloured generate buttons" loading="lazy" style="max-width:720px"><figcaption>Three model choices, a cache option, a server option, five filter checkboxes, a slider and four differently coloured generate buttons.</figcaption></figure>
+<ul>
+<li><b>Too many choices.</b> Replace the four buttons with one: “Write summaries”. Offer one extra option: “Also write summaries per year, location and programme (takes longer)”.</li>
+<li><b>Hard to get back.</b> After running one option, the others are hard to find again. Show all results in one list with their status (done, in progress, not started).</li>
+<li><b>Move to Advanced:</b> the number of documents per theme, clearing the cache, and starting the language model server.</li>
+</ul>
+
+<h3>Overview dashboard after a restart</h3>
+<figure class="wide"><img src="img/overview.jpg" style="max-width:720px" alt="Overview showing 0 comments and error as the top theme" loading="lazy"><figcaption>After a restart: 0 comments, 2 themes (the pipeline says 7) and “error” as the top theme.</figcaption></figure>
+<ul>
+<li>Never show the word “error” as data. If summaries haven’t been written yet, say so and link to the step that creates them.</li>
+<li>Show when the data was last updated, so users know their work was kept.</li>
+</ul>
+
+<h2>What to do, in order</h2>
+<div class="table-scroll wide"><table>
+<thead><tr><th>When</th><th>Change</th><th>Solves</th><th>Effort</th></tr></thead>
+<tbody>
+<tr><td>Now</td><td>Add a Dutch / English switch and translate every label, button and status</td><td>Mixed Dutch and English on one screen, raw status codes</td><td>Small</td></tr>
+<tr><td>Now</td><td>Plain-language step names and a one-line explanation per step</td><td>“What is a reranker?”, technical wording</td><td>Small</td></tr>
+<tr><td>Now</td><td>A “Done” summary card after each step, and checkmarks on finished steps</td><td>No feedback after a step, unclear state after a restart</td><td>Small</td></tr>
+<tr><td>Next</td><td>Quick / Balanced / Most thorough model choice, with technical names under Advanced</td><td>Technical model selection</td><td>Medium</td></tr>
+<tr><td>Next</td><td>Visible download progress for models</td><td>Silent downloads</td><td>Medium</td></tr>
+<tr><td>Next</td><td>One “Write summaries” button with an optional detail toggle and a results list</td><td>Too many Insights options</td><td>Medium</td></tr>
+<tr><td>Later</td><td>One light visual style, one icon set, one accent colour across all steps</td><td>Mixed light/dark, inconsistent colours and emoji</td><td>Medium</td></tr>
+</tbody></table></div>
+
+<h3>Decision we need from you</h3>
+<p><b>Advanced settings:</b> do some users need model and cache settings, or can we hide them completely?</p>
+
+<h2>Learning outcomes</h2>
+<div class="table-scroll wide"><table>
+<thead><tr><th>Outcome</th><th>How this review shows it</th></tr></thead>
+<tbody>
+<tr><td>1. Analysing</td><td>Tested the app hands-on, captured evidence per screen, and graded it against two published design checklists.</td></tr>
+<tr><td>2. Advising</td><td>Wrote for non-technical stakeholders, turned findings into ranked actions, listed the decisions only they can make, and sent them a separate, jargon-free PDF version of this review.</td></tr>
+</tbody></table></div>
+</article>
+</div>
+<script id="page-script">
+(function(){
+  var doc=document.getElementById('doc'), editBtn=document.getElementById('edit-btn'),
+      saveBtn=document.getElementById('save-btn'), cancelBtn=document.getElementById('cancel-btn'),
+      status=document.getElementById('status'), snapshot='', artifactApi=null, readOnly=false;
+  if(window.claude && window.claude.use){
+    window.claude.use('artifact').then(function(a){artifactApi=a;}).catch(function(){});
+  }
+  function setEditing(on){
+    doc.contentEditable=on?'true':'false';
+    editBtn.hidden=on||readOnly; saveBtn.hidden=!on; cancelBtn.hidden=!on;
+    status.textContent=on?'Editing: click any text to change it':'Read mode';
+    if(on){snapshot=doc.innerHTML;doc.focus();}
+  }
+  function cleanContent(){
+    var clone=doc.cloneNode(true);
+    clone.querySelectorAll('script').forEach(function(s){s.remove();});
+    clone.querySelectorAll('[contenteditable]').forEach(function(n){n.removeAttribute('contenteditable');});
+    return clone.innerHTML;
+  }
+  function buildDocument(){
+    var reset=':root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif;background:#fafaf9}img{max-width:100%}[hidden]{display:none!important}';
+    var title='<title>'+document.title+'</title>';
+    var style=document.getElementById('page-style').outerHTML;
+    var font=document.querySelector('link[rel="stylesheet"]').outerHTML;
+    var bar='<div class="toolbar" id="toolbar"><span id="status">Read mode</span><button id="edit-btn" type="button">Edit text</button><button id="save-btn" type="button" class="primary" hidden>Save</button><button id="cancel-btn" type="button" hidden>Cancel</button></div>';
+    var script='<script id="page-script">'+document.getElementById('page-script').textContent+'<\/script>';
+    return '<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>'+reset+'</style></head><body>'+
+      title+'\n'+style+'\n'+font+'\n'+bar+'\n<div class="wrap">\n<article id="doc">'+cleanContent()+'</article>\n</div>\n'+script+'</body></html>';
+  }
+  editBtn.addEventListener('click',function(){setEditing(true);});
+  cancelBtn.addEventListener('click',function(){doc.innerHTML=snapshot;setEditing(false);});
+  saveBtn.addEventListener('click',function(){
+    var html=buildDocument();
+    if(artifactApi){
+      status.textContent='Saving…';
+      artifactApi.publish(html).then(function(){status.textContent='Saved';setEditing(false);})
+      .catch(function(e){
+        var code=e&&e.code;
+        if(code==='not_writer'||code==='not_granted'){readOnly=true;doc.innerHTML=snapshot;setEditing(false);status.textContent='This copy is read-only';}
+        else if(code==='conflict'){status.textContent='Someone saved first; reloading their version';}
+        else{status.textContent='Could not save. Try again in a moment.';}
+      });
+    }else{
+      // Opened as a local file: save a new copy of the page instead.
+      var blob=new Blob([html],{type:'text/html'}), a=document.createElement('a');
+      a.href=URL.createObjectURL(blob); a.download='index.html'; document.body.appendChild(a); a.click(); a.remove();
+      status.textContent='Downloaded an updated index.html; replace the old file with it';
+      setEditing(false);
+    }
+  });
+})();
+</script>

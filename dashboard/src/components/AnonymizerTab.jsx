@@ -1,6 +1,149 @@
 import { useState, useEffect } from 'react';
+import { useNdjsonStream } from '../hooks/useNdjsonStream';
+import { apiUrl, getJson } from '../services/api';
+import { useI18n } from '../i18n/I18nProvider';
+import Icon from './Icon';
+import GateReason from './pipeline/GateReason';
+import ProgressPanel from './pipeline/ProgressPanel';
+import DoneCard from './pipeline/DoneCard';
+import StepHeader from './pipeline/StepHeader';
+import {
+  advancedBody, advancedDetails, advancedSummary, checkbox, errorBox, insetCard, primaryButton,
+  secondaryButton, stepBody, stepFooter, textInput,
+} from './pipeline/stepStyles';
+import { usePipelineStatus } from '../context/PipelineStatusContext';
+import { deriveStepView, isMet } from '../utils/stepView';
+import { continueHintKey, DONE_CARD_STATES } from '../utils/doneMessage';
+import { gateErrorMessage } from '../utils/gateError';
 
-export default function AnonymizerTab({ onComplete, existingAnonymized }) {
+// Step 1 states in which an anonymised file exists on disk.
+const HAS_OUTPUT = new Set(['done', 'needs_review', 'unverified', 'stale']);
+const MASK_KEYS = ['NAME', 'LOCATION', 'PII', 'TITLE', 'HEALTH'];
+
+/**
+ * The possibly-missed text of the current report, shown inside the Done card's
+ * review box. Never collapsed: the user must see it before acknowledging.
+ * listState: 'loading' | 'failed' | 'ready' (the report matching the status).
+ */
+function MissedList({ report, review, listState, onRetry }) {
+  const { t, formatNumber } = useI18n();
+  if (!(Number(review) > 0)) return null;
+  if (listState === 'loading') {
+    return (
+      <p className="m-0 flex items-center gap-2 text-sm text-on-surface-variant">
+        <Icon name="progress_activity" className="text-[18px] motion-safe:animate-spin" />
+        {t('common.loading')}
+      </p>
+    );
+  }
+  if (listState !== 'ready') {
+    return (
+      <div role="alert" className="flex flex-wrap items-center gap-3 rounded-[12px] bg-error-container text-on-error-container px-3 py-2 text-sm">
+        <span className="grow font-medium">{t('done.review.loadFailed')}</span>
+        <button type="button" onClick={onRetry} className="min-h-[44px] px-3 py-2 rounded-[10px] bg-surface-container-lowest text-primary font-semibold border border-outline-variant hover:bg-surface-container-low">
+          {t('action.retry')}
+        </button>
+      </div>
+    );
+  }
+  const keys = MASK_KEYS.filter((k) => (report?.missed_counts?.[k] ?? 0) > 0);
+  if (keys.length === 0) return <p className="m-0 text-sm text-on-surface-variant">{t('anon.samples.none')}</p>;
+  return (
+    <ul className="m-0 p-0 list-none flex flex-col gap-2">
+      {keys.map((k) => {
+        const samples = report.missed_samples?.[k] ?? [];
+        return (
+          <li key={k} className="bg-surface-container-lowest rounded-[10px] px-3.5 py-3 flex flex-col gap-1.5">
+            <span className="text-xs font-semibold text-on-surface-variant">
+              {t('anon.mask.' + k)} · {t('anon.count.missed', { n: formatNumber(report.missed_counts[k]) })}
+            </span>
+            {samples.length > 0 ? (
+              <span className="flex flex-wrap gap-2">
+                {samples.map((sample, i) => (
+                  <mark key={i} className="px-1.5 py-0.5 rounded-lg bg-warning-container text-on-surface text-sm font-mono break-all">{sample}</mark>
+                ))}
+              </span>
+            ) : (
+              <span className="text-sm text-on-surface-variant">{t('anon.samples.none')}</span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** What was removed, per kind of personal detail (collapsed). */
+function RemovedDetails({ report }) {
+  const { t, formatNumber } = useI18n();
+  const keys = MASK_KEYS.filter((k) => (report?.tag_counts?.[k] ?? 0) > 0);
+  if (keys.length === 0) return null;
+  return (
+    <details className="border border-outline-variant rounded-[12px]">
+      <summary className="px-4 py-3.5 font-semibold text-primary cursor-pointer">{t('done.removed.title')}</summary>
+      <ul className="m-0 px-4 pb-4 list-none flex flex-col gap-3">
+        {keys.map((k) => {
+          const samples = report.removed_samples?.[k] ?? [];
+          return (
+            <li key={k} className="flex flex-col gap-1.5">
+              <span className="text-sm font-semibold text-on-surface">
+                {t('anon.mask.' + k)} · {t('anon.count.removed', { n: formatNumber(report.tag_counts[k]) })}
+              </span>
+              {samples.length > 0 && (
+                <span className="flex flex-wrap gap-2">
+                  {samples.map((sample, i) => (
+                    <span key={i} className="px-2 py-0.5 rounded-lg bg-surface-container-low text-on-surface-variant text-sm font-mono break-all">{sample}</span>
+                  ))}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
+const PHASES = ['upload', 'columns', 'review'];
+
+/** Upload — Choose columns — Check results, with the current part marked. */
+function Phases({ current }) {
+  const { t } = useI18n();
+  return (
+    <ol aria-label={t('anon.phase.label')} className="m-0 p-0 list-none flex flex-wrap items-center gap-2 text-sm">
+      {PHASES.map((phase, i) => {
+        const n = i + 1;
+        const state = n < current ? 'done' : n === current ? 'current' : 'todo';
+        return (
+          <li key={phase} className="flex items-center gap-2" aria-current={state === 'current' ? 'step' : undefined}>
+            {i > 0 && <span aria-hidden="true" className="max-sm:hidden text-outline-variant">—</span>}
+            <span className={`flex items-center gap-1.5 ${state === 'done' ? 'text-primary font-semibold' : state === 'current' ? 'text-on-surface font-bold' : 'text-outline'}`}>
+              {state === 'done' ? (
+                <Icon name="check" className="text-[18px]" />
+              ) : (
+                <span aria-hidden="true" className={`w-[18px] h-[18px] rounded-full border-2 box-border flex items-center justify-center ${state === 'current' ? 'border-primary' : 'border-outline-variant'}`}>
+                  {state === 'current' && <span className="w-2 h-2 rounded-full bg-primary" />}
+                </span>
+              )}
+              {t('anon.phase.' + phase)}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+export default function AnonymizerTab({ onNavigate }) {
+  const { t, formatNumber, formatDate } = useI18n();
+  const stream = useNdjsonStream();
+  const { status, refresh } = usePipelineStatus();
+  const view = deriveStepView(status, 'anonymize');
+  const anon = status?.steps?.anonymize;
+  const anonState = anon?.state;
+  const reportId = anon?.summary?.report_id ?? null;
+  const existingAnonymized = HAS_OUTPUT.has(anonState);
+  const continueHint = continueHintKey(anonState);
   const [file, setFile] = useState(null);
   const [columns, setColumns] = useState([]);
   const [selectedColumns, setSelectedColumns] = useState([]);
@@ -10,36 +153,61 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
   const [result, setResult] = useState(null);
   const [preview, setPreview] = useState([]);
   const [progress, setProgress] = useState(0);
-  const [showStats, setShowStats] = useState(true);
   const [runVerification, setRunVerification] = useState(true);
-  const [expandedCategory, setExpandedCategory] = useState(null);
+  // True while the user is setting up a new run (or looking at its error)
+  // instead of the Done card of the current output.
+  const [rerunning, setRerunning] = useState(false);
+  // A run succeeded but the status that shows it could not be loaded.
+  const [statusNotice, setStatusNotice] = useState(false);
   const [blocklist, setBlocklist] = useState([]);
   const [blocklistInput, setBlocklistInput] = useState('');
 
   // Real-time stream states
-  const [statusMessage, setStatusMessage] = useState('');
+  const [currentStage, setCurrentStage] = useState('');
+  const [logs, setLogs] = useState([]);
   const [currentPreview, setCurrentPreview] = useState('');
   const [lastCheckpointRow, setLastCheckpointRow] = useState(null);
   const [checkpoint, setCheckpoint] = useState(null);
-  const [lastReport, setLastReport] = useState(null);
 
   useEffect(() => {
-    fetch('http://localhost:5001/api/checkpoint-status')
+    fetch(apiUrl('/api/checkpoint-status'))
       .then(r => r.json())
       .then(data => { if (data.has_checkpoint) setCheckpoint(data); })
       .catch(() => {});
-    fetch('http://localhost:5001/api/anonymize-report')
-      .then(r => r.json())
-      .then(data => { if (data.has_report) setLastReport(data); })
-      .catch(() => {});
-    fetch('http://localhost:5001/api/word-blocklist')
+    fetch(apiUrl('/api/word-blocklist'))
       .then(r => r.json())
       .then(data => { if (Array.isArray(data.words)) setBlocklist(data.words); })
       .catch(() => {});
   }, []);
 
+  // The report behind the Done card (missed / removed text). Fetched again
+  // whenever the status names a different report (or on retry), so the list
+  // the user acknowledges is always the one the backend records the tick for.
+  const [reportAttempt, setReportAttempt] = useState(0);
+  const reportKey = `${reportId}#${reportAttempt}`;
+  const [reportResult, setReportResult] = useState({ key: null, report: null, failed: false });
+  useEffect(() => {
+    let cancelled = false;
+    const settle = (report, failed) => { if (!cancelled) setReportResult({ key: reportKey, report, failed }); };
+    getJson('/api/anonymize-report')
+      .then(({ ok, data }) => {
+        if (ok && data?.has_report === true) settle(data, false);
+        else settle(null, true);
+      })
+      .catch(() => settle(null, true));
+    return () => { cancelled = true; };
+  }, [reportKey]);
+  const lastReport = reportResult.report;
+  const reportMatches = Boolean(lastReport) && (lastReport.timestamp == null || !reportId || lastReport.timestamp === reportId);
+  const listState = reportResult.key !== reportKey ? 'loading' : reportMatches ? 'ready' : 'failed';
+  const currentReport = listState === 'ready' ? lastReport : null;
+  const retryReport = () => {
+    refresh();
+    setReportAttempt((n) => n + 1);
+  };
+
   const saveBlocklist = (updatedWords) => {
-    fetch('http://localhost:5001/api/word-blocklist', {
+    fetch(apiUrl('/api/word-blocklist'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ words: updatedWords }),
@@ -67,112 +235,84 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
     saveBlocklist(updated);
   };
 
-  const loadLastReport = () => {
-    if (!lastReport) return;
-    setResult({
-      message: `Resultaten van vorige run (${lastReport.timestamp})`,
-      rows_processed: lastReport.rows_processed,
-      columns_anonymized: lastReport.columns,
-      stats: {
-        total_cells: lastReport.total_cells,
-        affected_cells: lastReport.affected_cells,
-        total_entities: lastReport.total_entities,
-        tag_counts: lastReport.tag_counts,
-        missed_counts: lastReport.missed_counts,
-        missed_samples: lastReport.missed_samples,
-        removed_samples: lastReport.removed_samples,
-        verification_skipped: lastReport.verification_skipped,
-      },
-    });
-    setShowStats(true);
-    setStep(3);
+  // Back to the Done card of the current output.
+  const showResults = () => {
+    setResult(null);
+    setRerunning(false);
   };
 
-  const runCheck = async () => {
-    setLoading(true);
+  const runAgain = () => {
     setResult(null);
-    setProgress(0);
-    setStatusMessage('Verificatie starten...');
-    try {
-      const res = await fetch('http://localhost:5001/api/run-anonymize-check', { method: 'POST' });
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const data = JSON.parse(line);
-          if (data.status === 'progress') {
-            if (data.progress !== undefined) setProgress(data.progress);
-            if (data.message) setStatusMessage(data.message);
-          } else if (data.status === 'success') {
-            setResult(data);
-            setProgress(100);
-            setStatusMessage('Verificatie voltooid!');
-            setLastReport({
-              timestamp: new Date().toLocaleString('nl-NL'),
-              rows_processed: data.rows_processed,
-              total_entities: data.stats.total_entities,
-              ...data.stats,
-              columns: data.columns_anonymized,
-            });
-            setStep(3);
-          } else if (data.status === 'error') {
-            setResult({ error: data.error });
-            break;
-          }
-        }
-      }
-    } catch (err) {
-      setResult({ error: err.message });
-    } finally {
-      setLoading(false);
-      setShowStats(true);
+    setStep(1);
+    setRerunning(true);
+  };
+
+  // Keeps the progress panel up until the refreshed status shows the new
+  // result, so the step never goes blank in between; says so if it can't load.
+  const finishRun = async (succeeded) => {
+    const refreshed = await refresh();
+    setLoading(false);
+    if (succeeded) {
+      setRerunning(false);
+      if (!refreshed?.status) setStatusNotice(true);
     }
   };
 
-  const MASKING_INFO = [
-    { tag: '[NAME]',     meaning: 'Names / persons',                                           bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' },
-    { tag: '[LOCATION]', meaning: 'Addresses / locations',                                    bg: 'bg-blue-100',   text: 'text-blue-700',   border: 'border-blue-200'   },
-    { tag: '[PII]',      meaning: 'Identifiers — email, phone, BSN, student nr, usernames',   bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200' },
-    { tag: '[TITLE]',    meaning: 'Titles (Meneer / Mevrouw)',                                 bg: 'bg-rose-100',   text: 'text-rose-700',   border: 'border-rose-200'   },
-    { tag: '[HEALTH]',   meaning: 'Health info — illness, diagnosis, disability, medication',  bg: 'bg-emerald-100',text: 'text-emerald-700',border: 'border-emerald-200'},
-  ];
+  // Re-runs the follow-up check on the existing anonymised file.
+  const runCheck = async () => {
+    setLoading(true);
+    setStatusNotice(false);
+    setRerunning(true);
+    setStep(3);
+    setResult(null);
+    setProgress(0);
+    setCurrentStage('');
+    setLogs([]);
+    let sawEvent = false;
+    let succeeded = false;
+    try {
+      await stream.start('/api/run-anonymize-check', undefined, {
+        onEvent: (data) => {
+          if (!sawEvent) {
+            sawEvent = true;
+            refresh();
+          }
+          if (data.status === 'progress') {
+            if (data.progress !== undefined) setProgress(data.progress);
+            if (data.stage) setCurrentStage(data.stage);
+          } else if (data.status === 'success') {
+            setProgress(100);
+            succeeded = true;
+          } else if (data.status === 'error') {
+            setResult({ error: data.error });
+          }
+        }
+      });
+    } catch (err) {
+      setResult({ error: err.message, message: gateErrorMessage(t, err) });
+    } finally {
+      await finishRun(succeeded);
+    }
+  };
 
-  const LAYER_OPTIONS = [
-    {
-      id: 'presidio',
-      name: 'Layer 1: Presidio + custom regex',
-      badge: 'Fast baseline',
-      description: 'spaCy NL/EN NER plus Fontys-specific regex for names, titles, room codes, floors, BSN, phone, student numbers and emails.',
-      accent: 'indigo',
-    },
-    {
-      id: 'eu-pii',
-      name: 'Layer 2: EU-PII-Safeguard',
-      badge: 'Best recall',
-      description: 'Hugging Face token-classification model for extra GDPR/PII entities missed by regex or Presidio.',
-      accent: 'purple',
-    },
-    {
-      id: 'openai-privacy-filter',
-      name: 'Layer 2: OpenAI Privacy Filter',
-      badge: 'Experimental',
-      description: 'Optional extra privacy filter backend. Use only when the model is supported in your local Transformers setup.',
-      accent: 'rose',
-    },
-  ];
+  const MASKING_INFO = MASK_KEYS.map((key) => ({ tag: `[${key}]`, key }));
 
   const LAYER_PRESETS = [
-    { label: 'Fast', layers: ['presidio'], hint: 'Quick regex + spaCy pass' },
-    { label: 'Recommended', layers: ['presidio', 'eu-pii'], hint: 'Matches the privacy_officer flow' },
-    { label: 'Deep', layers: ['presidio', 'eu-pii', 'openai-privacy-filter'], hint: 'All available layers' },
+    { id: 'fast', layers: ['presidio'] },
+    { id: 'recommended', layers: ['presidio', 'eu-pii'] },
+    { id: 'deep', layers: ['presidio', 'eu-pii', 'openai-privacy-filter'] },
   ];
+
+  // Technical layer ids are shown as-is, under Advanced only.
+  const LAYER_OPTIONS = ['presidio', 'eu-pii', 'openai-privacy-filter'];
+
+  const toggleLayer = (id) => {
+    setSelectedLayers((prev) => (prev.includes(id) ? prev.filter((l) => l !== id) : [...prev, id]));
+  };
+
+  const formatTimestamp = (ts) => {
+    try { return formatDate(ts); } catch { return String(ts ?? ''); }
+  };
 
   const isQuestionnaireColumn = (col) => {
     const name = String(col).trim();
@@ -197,7 +337,7 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
       const formData = new FormData();
       formData.append('file', uploadedFile);
 
-      const response = await fetch('http://localhost:5001/api/inspect-file', {
+      const response = await fetch(apiUrl('/api/inspect-file'), {
         method: 'POST',
         body: formData
       });
@@ -228,738 +368,476 @@ export default function AnonymizerTab({ onComplete, existingAnonymized }) {
     );
   };
 
-  const toggleLayer = (layer) => {
-    setSelectedLayers(prev =>
-      prev.includes(layer)
-        ? prev.filter(l => l !== layer)
-        : [...prev, layer]
-    );
-  };
-
   const handleAnonymize = async (overrideColumns = null, overrideLayers = null, overrideVerification = null) => {
     const cols = overrideColumns ?? selectedColumns;
     const lyrs = overrideLayers ?? selectedLayers;
     const verify = overrideVerification ?? runVerification;
 
     if (cols.length === 0) {
-      setResult({ error: 'Select at least one column' });
+      setResult({ errorKey: 'anon.err.columns' });
       return;
     }
 
     if (lyrs.length === 0) {
-      setResult({ error: 'Select at least one anonymization layer' });
+      setResult({ errorKey: 'anon.err.layers' });
       return;
     }
 
     setLoading(true);
+    setStatusNotice(false);
+    setRerunning(true);
     setStep(3);
     setResult(null);
     setProgress(0);
-    setStatusMessage('Initializing stream...');
+    setCurrentStage('');
+    setLogs([]);
     setCurrentPreview('');
     setCheckpoint(null);
 
+    let sawEvent = false;
+    let succeeded = false;
     try {
-      const response = await fetch('http://localhost:5001/api/anonymize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          selected_columns: cols,
-          selected_layers: lyrs,
-          run_verification: verify
-        })
-      });
-
-      if (!response.body) throw new Error("ReadableStream not yet supported in this browser.");
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let done = false;
-
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-        if (value) {
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-          for (const line of lines) {
-            if (line.trim()) {
-              try {
-                const data = JSON.parse(line.trim());
-                if (data.status === 'progress') {
-                  if (data.progress !== undefined) setProgress(data.progress);
-                  if (data.message) setStatusMessage(data.message);
-                  if (data.preview) setCurrentPreview(data.preview);
-                  if (data.checkpoint_saved && data.row) setLastCheckpointRow(`${data.column} — rij ${data.row}/${data.total_rows}`);
-                } else if (data.status === 'success') {
-                  setResult(data);
-                  setProgress(100);
-                  setStatusMessage('Complete!');
-                  setTimeout(() => {
-                    if (typeof onComplete === 'function') onComplete();
-                  }, 1500);
-                } else if (data.status === 'error') {
-                  setResult({ error: data.error });
-                  break;
-                }
-              } catch (e) {
-                console.error("Failed to parse line", line);
-              }
-            }
+      await stream.start('/api/anonymize', {
+        selected_columns: cols,
+        selected_layers: lyrs,
+        run_verification: verify
+      }, {
+        onEvent: (data) => {
+          if (!sawEvent) {
+            sawEvent = true;
+            refresh();
+          }
+          if (data.status === 'progress') {
+            if (data.progress !== undefined) setProgress(data.progress);
+            if (data.stage) setCurrentStage(data.stage);
+            if (data.message) setLogs(prev => [...prev, data.message]);
+            if (data.preview) setCurrentPreview(data.preview);
+            if (data.checkpoint_saved && data.row) setLastCheckpointRow(`${data.column} (${data.row}/${data.total_rows})`);
+          } else if (data.status === 'success') {
+            setProgress(100);
+            succeeded = true;
+          } else if (data.status === 'error') {
+            setResult({ error: data.error });
           }
         }
-      }
+      });
     } catch (error) {
-      setResult({ error: error.message });
+      setResult({ error: error.message, message: gateErrorMessage(t, error) });
       setProgress(0);
     } finally {
-      setLoading(false);
+      await finishRun(succeeded);
     }
   };
 
-  return (
-    <div className="max-w-4xl mx-auto space-y-8 p-6 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100 transition-all duration-500">
-      <div className="flex items-center space-x-4 pb-4 border-b border-gray-100">
-        <div className="p-3 bg-gradient-to-tr from-indigo-500 to-purple-500 text-white rounded-xl shadow-lg">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-          </svg>
-        </div>
-        <div>
-          <h2 className="text-3xl font-extrabold tracking-tight text-gray-900">Data Anonymization Engine</h2>
-          <p className="text-gray-500 text-sm mt-1">Transform sensitive survey data safely via layered masking</p>
+  // view.state (not the raw state) so no Done card shows while step 1 runs.
+  const showDone = DONE_CARD_STATES.has(view.state) && !loading && !rerunning;
+
+  // Thoroughness and the word filter. Shown under the Done card and while setting up a run.
+  const advanced = (
+    <details className={advancedDetails}>
+      <summary className={advancedSummary}>
+        <Icon name="tune" className="text-[18px]" />
+        {t('anon.advanced')}
+      </summary>
+      <div className={advancedBody}>
+        <fieldset className="m-0 p-0 border-0 flex flex-col gap-2">
+          <legend className="p-0 mb-2 font-semibold text-on-surface">{t('anon.layers.title')}</legend>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {LAYER_PRESETS.map((preset) => {
+              const active = preset.layers.length === selectedLayers.length
+                && preset.layers.every((layer) => selectedLayers.includes(layer));
+              return (
+                <label
+                  key={preset.id}
+                  className={`flex flex-col gap-1 rounded-[12px] cursor-pointer min-w-0 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary ${active ? 'border-2 border-primary bg-primary-tint p-[11px]' : 'border border-outline-variant bg-surface-container-lowest p-3 hover:bg-surface-container-low'}`}
+                >
+                  <input
+                    type="radio"
+                    name="anon-preset"
+                    value={preset.id}
+                    checked={active}
+                    onChange={() => setSelectedLayers(preset.layers)}
+                    className="sr-only"
+                  />
+                  <span className={`text-sm font-bold ${active ? 'text-primary' : 'text-on-surface'}`}>{t('anon.preset.' + preset.id)}</span>
+                  <span className="text-[13px] leading-snug text-on-surface-variant">{t('anon.preset.' + preset.id + '.lead')}</span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <fieldset className="m-0 p-0 border-0 flex flex-col gap-2">
+          <legend className="p-0 mb-2 font-semibold text-on-surface">{t('anon.checks.title')}</legend>
+          {LAYER_OPTIONS.map((id) => (
+            <label key={id} className="flex items-start gap-3 p-3 rounded-[12px] border border-outline-variant bg-surface-container-lowest cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectedLayers.includes(id)}
+                onChange={() => toggleLayer(id)}
+                className={checkbox}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-on-surface font-mono break-all">{id}</span>
+                <span className="block text-[13px] text-on-surface-variant mt-0.5 leading-snug">{t('anon.layer.' + id)}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+
+        <div className="flex flex-col gap-3 pt-4 border-t border-surface-container-highest">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="m-0 flex items-center gap-2 text-sm font-semibold text-on-surface">
+              <Icon name="block" className="text-[20px] text-on-surface-variant" />
+              {t('anon.blocklist.title')}
+            </h3>
+            {blocklist.length > 0 && (
+              <span className="text-xs font-semibold text-primary bg-primary-fixed px-2.5 py-1 rounded-full">
+                {t('anon.blocklist.count', { n: blocklist.length })}
+              </span>
+            )}
+          </div>
+          <p className="m-0 text-sm text-on-surface-variant">{t('anon.blocklist.lead')}</p>
+          <div className="flex flex-wrap gap-2">
+            <input
+              type="text"
+              value={blocklistInput}
+              onChange={(e) => setBlocklistInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addBlocklistWord()}
+              placeholder={t('anon.blocklist.placeholder')}
+              aria-label={t('anon.blocklist.title')}
+              className={`${textInput} flex-[1_1_200px] w-auto`}
+            />
+            <button
+              type="button"
+              onClick={addBlocklistWord}
+              disabled={!blocklistInput.trim()}
+              className={secondaryButton}
+            >
+              <Icon name="add" className="text-[18px]" />
+              {t('anon.blocklist.add')}
+            </button>
+          </div>
+          {blocklist.length > 0 ? (
+            <ul className="m-0 p-0 list-none flex flex-wrap gap-2">
+              {blocklist.map((word) => (
+                <li key={word} className="inline-flex items-center gap-1 pl-3 pr-1 py-1 bg-primary-fixed text-primary text-sm font-mono rounded-[12px] break-all">
+                  {word}
+                  <button
+                    type="button"
+                    onClick={() => removeBlocklistWord(word)}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-primary/10"
+                    title={t('anon.blocklist.remove', { word })}
+                    aria-label={t('anon.blocklist.remove', { word })}
+                  >
+                    <Icon name="close" className="text-[16px]" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="m-0 text-sm text-outline">{t('anon.blocklist.empty')}</p>
+          )}
         </div>
       </div>
+    </details>
+  );
 
-      <div className="relative">
-        {/* Step Indicator */}
-        <div className="flex items-center justify-between mb-8 relative z-10">
-          <div className="absolute top-1/2 -translate-y-1/2 left-0 w-full h-1 bg-gray-100 rounded-full -z-10"></div>
-          <div className={`absolute top-1/2 -translate-y-1/2 left-0 h-1 bg-indigo-500 rounded-full -z-10 transition-all duration-700 ease-out`} style={{ width: step === 1 ? '0%' : step === 2 ? '50%' : '100%' }}></div>
+  return (
+    <>
+      <StepHeader stepId="anonymize" />
 
-          {[1, 2, 3].map(s => (
-            <div key={s} className={`flex items-center justify-center w-10 h-10 rounded-full font-bold transition-all duration-500 shadow-md ${step >= s ? 'bg-indigo-600 text-white scale-110' : 'bg-white text-gray-400 border-2 border-gray-200'}`}>
-              {step > s ? '✓' : s}
-            </div>
-          ))}
-        </div>
-
-        {/* --- STEP 1 --- */}
-        {step === 1 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {checkpoint && (
-              <div className="p-5 bg-amber-50 border-2 border-amber-300 rounded-2xl shadow-md">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-amber-100 rounded-xl shrink-0">
-                      <svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>
-                    </div>
-                    <div>
-                      <p className="font-bold text-amber-900">Onderbroken anonimisering gevonden</p>
-                      <p className="text-sm text-amber-700 mt-1">
-                        <span className="font-semibold">{checkpoint.completed_columns.length} van {checkpoint.total_columns.length} kolom(men)</span> al klaar
-                        {checkpoint.current_col && <span> — gestopt bij <span className="font-mono font-semibold">"{checkpoint.current_col}"</span></span>}
-                      </p>
-                      <p className="text-xs text-amber-600 mt-1">Je kunt verdergaan zonder opnieuw te beginnen.</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      onClick={() => setCheckpoint(null)}
-                      className="px-3 py-2 bg-white text-amber-700 text-xs font-bold rounded-lg shadow-sm hover:shadow-md transition-all ring-1 ring-amber-300"
-                    >
-                      Negeren
-                    </button>
-                    <button
-                      onClick={() => handleAnonymize(checkpoint.total_columns, checkpoint.selected_layers, runVerification)}
-                      className="px-5 py-2 bg-amber-500 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-amber-600 transition-all"
-                    >
-                      Verdergaan
-                    </button>
-                  </div>
-                </div>
-              </div>
+      {showDone ? (
+        <>
+          <DoneCard
+            stepId="anonymize"
+            stepView={view}
+            summary={anon?.summary}
+            completedAt={anon?.completed_at}
+            onContinue={() => onNavigate?.('vectors')}
+            onRunAgain={runAgain}
+            onRunCheck={runCheck}
+            listReady={listState === 'ready'}
+            intro={<Phases current={3} />}
+            details={<RemovedDetails report={currentReport} />}
+          >
+            <MissedList report={currentReport} review={anon?.summary?.review} listState={listState} onRetry={retryReport} />
+          </DoneCard>
+          {advanced}
+        </>
+      ) : (
+        <>
+          <div className={stepBody}>
+            {statusNotice && (
+              <p role="alert" className="m-0 rounded-[12px] bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
             )}
-            {lastReport && (
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-slate-100 rounded-xl shrink-0">
-                    <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-700 text-sm">Vorige run beschikbaar</p>
-                    <p className="text-xs text-slate-500">{lastReport.timestamp} — {lastReport.rows_processed} rijen, {lastReport.total_entities} entiteiten verwijderd</p>
-                  </div>
-                </div>
-                <button
-                  onClick={loadLastReport}
-                  className="px-4 py-2 bg-slate-700 text-white text-sm font-bold rounded-lg hover:bg-slate-800 transition-all shrink-0"
-                >
-                  Bekijk resultaten
-                </button>
-              </div>
-            )}
-            <div className="group relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-indigo-400 to-purple-400 rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-500"></div>
-              <div className="relative border-2 border-dashed border-indigo-200 bg-white/50 p-12 rounded-2xl text-center hover:border-indigo-500 cursor-pointer transition-all duration-300">
-                <input
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  onChange={handleFileUpload}
-                  disabled={loading}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-                <div className="flex flex-col items-center justify-center space-y-4 pointer-events-none">
-                  <div className="p-4 bg-indigo-50 text-indigo-500 rounded-full group-hover:scale-110 transition-transform duration-300">
-                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-lg font-semibold text-gray-800">Drop your CSV file here or click to browse</p>
-                    <p className="text-sm text-gray-500">Supports .csv and .xlsx files</p>
-                  </div>
-                  {file && <p className="mt-4 inline-flex items-center text-sm font-medium text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full ring-1 ring-emerald-200">✓ {file.name}</p>}
-                </div>
-              </div>
-            </div>
 
-            {existingAnonymized && (
-              <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center space-x-3 text-indigo-800">
-                    <svg className="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
-                    <span className="text-sm font-medium">Er is al een geanonimiseerde dataset beschikbaar.</span>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      onClick={runCheck}
-                      disabled={loading}
-                      className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-indigo-700 transition-all disabled:opacity-50"
-                    >
-                      {loading ? 'Bezig...' : 'Check uitvoeren'}
-                    </button>
-                    <button
-                      onClick={() => { if (typeof onComplete === 'function') onComplete(); }}
-                      className="px-4 py-2 bg-white text-indigo-600 text-sm font-bold rounded-lg shadow-sm hover:shadow-md transition-all ring-1 ring-indigo-200 hover:bg-indigo-50"
-                    >
-                      Overslaan
-                    </button>
-                  </div>
-                </div>
-                {loading && (
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs text-indigo-700 font-medium">
-                      <span>{statusMessage}</span>
-                      <span>{progress}%</span>
+            <Phases current={step} />
+
+            {/* --- STEP 1 --- */}
+            {step === 1 && (
+              <>
+                {checkpoint && (
+                  <div className="flex flex-wrap items-start justify-between gap-4 rounded-[12px] border border-warning/30 bg-warning-container p-4">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <Icon name="schedule" className="text-[20px] text-warning shrink-0" />
+                      <div className="min-w-0">
+                        <p className="m-0 font-bold text-warning">{t('anon.interrupted.title')}</p>
+                        <p className="m-0 mt-1 text-sm font-semibold text-on-surface">
+                          {checkpoint.current_col
+                            ? t('anon.interrupted.progress', { x: checkpoint.completed_columns.length, y: checkpoint.total_columns.length, col: checkpoint.current_col })
+                            : t('anon.interrupted.progressNoCol', { x: checkpoint.completed_columns.length, y: checkpoint.total_columns.length })}
+                        </p>
+                        <p className="m-0 mt-1 text-sm text-on-surface">{t('anon.interrupted.hint')}</p>
+                      </div>
                     </div>
-                    <div className="w-full bg-indigo-100 rounded-full h-1.5">
-                      <div className="bg-indigo-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => setCheckpoint(null)} className={secondaryButton}>
+                        {t('anon.restart')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAnonymize(checkpoint.total_columns, checkpoint.selected_layers, runVerification)}
+                        disabled={!view.canStart}
+                        className={primaryButton}
+                      >
+                        {t('anon.resume')}
+                      </button>
                     </div>
                   </div>
                 )}
+
+                {lastReport && existingAnonymized && (
+                  <div className="flex flex-wrap items-center justify-between gap-4 rounded-[12px] bg-surface-container-low p-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-9 h-9 rounded-[12px] bg-surface-container-lowest text-primary flex items-center justify-center shrink-0">
+                        <Icon name="description" className="text-[20px]" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="m-0 font-semibold text-sm text-on-surface">{t('anon.previous.title')}</p>
+                        <p className="m-0 text-[13px] text-on-surface-variant">{t('anon.previous.meta', { date: formatTimestamp(lastReport.timestamp), n: formatNumber(lastReport.rows_processed ?? 0), m: formatNumber(lastReport.total_entities ?? 0) })}</p>
+                      </div>
+                    </div>
+                    <button type="button" onClick={showResults} className={secondaryButton}>
+                      {t('anon.previous.view')}
+                    </button>
+                  </div>
+                )}
+
+                <div className="relative border-2 border-dashed border-outline-variant bg-surface-container-low rounded-[12px] px-4 py-10 sm:p-12 text-center hover:border-primary has-[:focus-visible]:border-primary transition-colors duration-150">
+                  <input
+                    type="file"
+                    accept=".csv,.xlsx,.xls"
+                    onChange={handleFileUpload}
+                    disabled={loading}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <div className="flex flex-col items-center justify-center gap-3 pointer-events-none">
+                    <span className="w-14 h-14 rounded-2xl bg-primary-fixed text-primary flex items-center justify-center">
+                      <Icon name="cloud_upload" className="text-[28px]" />
+                    </span>
+                    <div className="flex flex-col gap-1">
+                      <p className="m-0 text-base font-semibold text-on-surface">{t('anon.drop.title')}</p>
+                      <p className="m-0 text-sm text-on-surface-variant">{t('anon.drop.hint')}</p>
+                    </div>
+                    {file && (
+                      <p className="m-0 mt-2 inline-flex items-center gap-1 text-sm font-semibold text-primary bg-surface-container-lowest border border-outline-variant px-3 py-1 rounded-full max-w-full break-all">
+                        <Icon name="check" className="text-[18px] shrink-0" />{file.name}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {existingAnonymized && (
+                  <div className="flex flex-col gap-3 rounded-[12px] border border-outline-variant p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 text-on-surface">
+                        <Icon name="check_circle" className="text-[20px] text-primary shrink-0" />
+                        <span className="text-sm font-medium">{t('anon.existing')}</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <GateReason stepId="anonymize" onNavigate={onNavigate} />
+                        <button
+                          type="button"
+                          onClick={runCheck}
+                          disabled={loading || !view.canStart}
+                          className={secondaryButton}
+                        >
+                          <Icon name="fact_check" className="text-[18px]" />
+                          {loading ? t('anon.check.running') : t('anon.check.run')}
+                        </button>
+                        {/* Same gate as the Done card: not while step 1 needs review or is unverified. */}
+                        <button
+                          type="button"
+                          onClick={() => { if (typeof onNavigate === 'function') onNavigate('vectors'); }}
+                          disabled={!isMet(anonState)}
+                          aria-describedby={continueHint ? 'anon-existing-hint' : undefined}
+                          className={primaryButton}
+                        >
+                          {t('action.continue', { n: 2 })}
+                          <Icon name="arrow_forward" className="text-[18px]" />
+                        </button>
+                      </div>
+                    </div>
+                    {continueHint && (
+                      <p id="anon-existing-hint" className="m-0 text-sm font-medium text-warning">{t(continueHint)}</p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* --- STEP 2 --- */}
+            {step === 2 && (
+              <>
+                <div className="flex flex-col gap-3 rounded-[12px] bg-surface-container-low p-4">
+                  <p className="m-0 text-xs font-bold uppercase tracking-[0.06em] text-on-surface-variant">{t('anon.removes.title')}</p>
+                  <ul className="m-0 p-0 list-none flex flex-wrap gap-2">
+                    {MASKING_INFO.map((item) => (
+                      <li key={item.tag} className="flex items-center gap-2 px-3 py-2 rounded-[12px] bg-surface-container-lowest border border-outline-variant">
+                        <span className="font-mono text-xs font-extrabold text-primary">{item.tag}</span>
+                        <span className="text-xs text-on-surface-variant">{t('anon.mask.' + item.key)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="m-0 text-[13px] text-on-surface-variant">{t('anon.removes.note')}</p>
+                </div>
+
+                <fieldset className={`${insetCard} m-0 flex flex-col gap-3`}>
+                  <legend className="sr-only">{t('anon.columns.title')}</legend>
+                  <span aria-hidden="true" className="flex items-center gap-2 font-bold text-on-surface">
+                    <Icon name="view_column" className="text-[20px] text-on-surface-variant" />
+                    {t('anon.columns.title')}
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+                    {columns.map((col) => {
+                      const isSelected = selectedColumns.includes(col);
+                      return (
+                        <label
+                          key={col}
+                          className={`flex items-center gap-3 min-h-[44px] px-3 py-2 rounded-[12px] border cursor-pointer min-w-0 ${isSelected ? 'border-primary bg-primary-tint' : 'border-outline-variant hover:bg-surface-container-low'}`}
+                        >
+                          <input type="checkbox" checked={isSelected} onChange={() => toggleColumn(col)} className={checkbox} />
+                          <span className="text-sm font-medium text-on-surface truncate" title={col}>{col}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+
+                {preview.length > 0 && (
+                  <div className="flex flex-col gap-3 rounded-[12px] bg-surface-container-low p-4 min-w-0">
+                    <p className="m-0 text-xs font-bold uppercase tracking-[0.06em] text-on-surface-variant">{t('anon.preview.title')}</p>
+                    <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
+                      {selectedColumns.slice(0, 4).map((col) => (
+                        <div key={col} className="min-w-[200px] max-w-[250px] p-3 bg-surface-container-lowest rounded-[12px] border border-outline-variant shrink-0">
+                          <p className="m-0 mb-1 text-xs font-bold text-primary truncate">{col}</p>
+                          <p className="m-0 text-sm text-on-surface line-clamp-3">{String(preview[0][col] || '')}</p>
+                        </div>
+                      ))}
+                      {selectedColumns.length > 4 && (
+                        <div className="min-w-[100px] flex items-center justify-center text-sm font-medium text-outline">
+                          {t('anon.preview.more', { n: selectedColumns.length - 4 })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* --- STEP 3 --- */}
+            {step === 3 && loading && (
+              <div className="flex flex-col gap-3">
+                <ProgressPanel stage={currentStage} progress={progress} logs={logs} />
+                <p className="m-0 text-sm text-on-surface-variant">{t('progress.browseNote')}</p>
+                {currentPreview && (
+                  <div className="p-4 bg-surface-container-low rounded-[12px]">
+                    <p className="m-0 mb-1 text-xs font-bold uppercase tracking-[0.06em] text-on-surface-variant">{t('anon.live')}</p>
+                    <p className="m-0 text-sm font-mono leading-relaxed line-clamp-2 text-on-surface-variant">{currentPreview}</p>
+                  </div>
+                )}
+                {lastCheckpointRow && progress < 100 && (
+                  <div className="flex items-center gap-2 text-sm text-success bg-success-container rounded-[12px] px-3 py-2">
+                    <Icon name="check_circle" className="text-[18px]" />
+                    {t('anon.checkpointSaved')}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {step === 3 && result?.error && (
+              <div role="alert" className={errorBox}>
+                <Icon name="error" className="text-[22px] shrink-0" />
+                <div className="min-w-0">
+                  <p className="m-0 font-bold">{t('anon.failed')}</p>
+                  {result.message && <p className="m-0 mt-1 text-sm">{result.message}</p>}
+                  {result.errorKey ? (
+                    <p className="m-0 mt-1 text-sm">{t(result.errorKey)}</p>
+                  ) : (
+                    <details className="mt-1 text-sm">
+                      <summary className="cursor-pointer">{t('action.details')}</summary>
+                      <p className="mt-1 break-words">{result.error}</p>
+                    </details>
+                  )}
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <button type="button" onClick={() => { setResult(null); setStep(1); }} className={secondaryButton}>
+                      {t('anon.back')}
+                    </button>
+                    {existingAnonymized && (
+                      <button type="button" onClick={showResults} className={secondaryButton}>
+                        {t('anon.previous.view')}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
-        )}
 
-        {/* --- STEP 2 --- */}
-        {step === 2 && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
-            <div className="p-5 bg-indigo-50 border border-indigo-100 rounded-xl">
-              <p className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-3">What gets masked</p>
-              <div className="flex flex-wrap gap-2">
-                {MASKING_INFO.map((item) => (
-                  <div
-                    key={item.tag}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${item.border} ${item.bg} shadow-sm`}
-                  >
-                    <span className={`font-mono text-xs font-black ${item.text}`}>{item.tag}</span>
-                    <span className="text-xs text-gray-600">{item.meaning}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-indigo-700 mt-3">
-                Selected layers replace detected entities with these tags; the backend receives the exact layer IDs you choose below.
-              </p>
-            </div>
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Columns Section */}
-              <div className="space-y-4 p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
-                <div className="flex items-center space-x-2 pb-2 border-b border-gray-50">
-                  <span className="text-xl">📋</span>
-                  <h3 className="font-bold text-gray-800">Select Columns</h3>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-64 overflow-y-auto p-1">
-                  {columns.map(col => {
-                    const isSelected = selectedColumns.includes(col);
-                    return (
-                      <label
-                        key={col}
-                        className={`flex items-center p-3 rounded-xl border-2 cursor-pointer transition-all duration-200 ${isSelected ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-100 hover:border-gray-200 bg-white'}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleColumn(col)}
-                          className="sr-only"
-                        />
-                        <div className={`flex items-center justify-center w-5 h-5 rounded flex-shrink-0 mr-3 transition-colors ${isSelected ? 'bg-indigo-500' : 'border border-gray-300'}`}>
-                          {isSelected && <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                        </div>
-                        <span className={`text-sm truncate font-medium ${isSelected ? 'text-indigo-900' : 'text-gray-600'}`} title={col}>{col}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Layers Section */}
-              <div className="space-y-4 p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
-                <div className="flex items-center justify-between gap-3 pb-2 border-b border-gray-50">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xl">🛡️</span>
-                    <h3 className="font-bold text-gray-800">Choose Layers</h3>
-                  </div>
-                  <span className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-100 px-2 py-1 rounded-full">
-                    {selectedLayers.length} active
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  {LAYER_PRESETS.map((preset) => {
-                    const active = preset.layers.length === selectedLayers.length
-                      && preset.layers.every((layer) => selectedLayers.includes(layer));
-                    return (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        onClick={() => setSelectedLayers(preset.layers)}
-                        className={`p-2 rounded-xl border text-left transition-all ${active ? 'border-purple-500 bg-purple-50 shadow-sm' : 'border-gray-100 bg-gray-50 hover:border-purple-200 hover:bg-white'}`}
-                        title={preset.hint}
-                      >
-                        <span className={`block text-xs font-black ${active ? 'text-purple-800' : 'text-gray-700'}`}>{preset.label}</span>
-                        <span className="block text-[10px] leading-tight text-gray-500 mt-0.5">{preset.layers.length} layer{preset.layers.length > 1 ? 's' : ''}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="space-y-3">
-                  {LAYER_OPTIONS.map((layer) => {
-                    const isSelected = selectedLayers.includes(layer.id);
-                    const selectedClasses = {
-                      indigo: 'border-indigo-500 bg-indigo-50/70 shadow-sm',
-                      purple: 'border-purple-500 bg-purple-50/70 shadow-sm',
-                      rose: 'border-rose-500 bg-rose-50/70 shadow-sm',
-                    }[layer.accent];
-                    const iconClasses = {
-                      indigo: 'bg-indigo-500',
-                      purple: 'bg-purple-500',
-                      rose: 'bg-rose-500',
-                    }[layer.accent];
-                    const textClasses = {
-                      indigo: 'text-indigo-900',
-                      purple: 'text-purple-900',
-                      rose: 'text-rose-900',
-                    }[layer.accent];
-
-                    return (
-                      <label
-                        key={layer.id}
-                        className={`flex items-start p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${isSelected ? selectedClasses : 'border-gray-100 hover:border-gray-200 bg-white'}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleLayer(layer.id)}
-                          className="sr-only"
-                        />
-                        <div className={`mt-0.5 flex items-center justify-center w-5 h-5 rounded flex-shrink-0 mr-4 transition-colors ${isSelected ? iconClasses : 'border border-gray-300'}`}>
-                          {isSelected && <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className={`font-bold text-sm ${isSelected ? textClasses : 'text-gray-700'}`}>{layer.name}</p>
-                            <span className="text-[10px] font-black uppercase tracking-wide text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{layer.badge}</span>
-                          </div>
-                          <p className="text-xs text-gray-500 mt-1 leading-relaxed">{layer.description}</p>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-
-                <p className="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-xl p-3">
-                  Recommended uses the same layered flow as <code className="font-mono text-purple-700">privacy_officer</code>: collect spans first, merge/filter them, then apply masks once.
-                </p>
-              </div>
-            </div>
-
-            {/* Custom Word Blocklist */}
-            <div className="p-6 bg-white border border-gray-100 shadow-sm rounded-2xl space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-gray-50">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xl">🚫</span>
-                  <h3 className="font-bold text-gray-800">Custom Word Filter</h3>
-                </div>
-                {blocklist.length > 0 && (
-                  <span className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-100 px-2 py-1 rounded-full">
-                    {blocklist.length} word{blocklist.length !== 1 ? 's' : ''}
-                  </span>
-                )}
-              </div>
-
-              <p className="text-xs text-gray-500 leading-relaxed">
-                Words or phrases added here are always masked as <span className="font-mono font-bold text-purple-700">[PII]</span> during anonymization — regardless of what the NER models detect. Applied as a fast post-processing step with no impact on performance. Persists between runs.
-              </p>
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={blocklistInput}
-                  onChange={e => setBlocklistInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && addBlocklistWord()}
-                  placeholder="Type a word or phrase and press Enter…"
-                  className="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-purple-400 transition-all"
-                />
+          {step === 2 && (
+            <div className={stepFooter}>
+              <button type="button" onClick={() => setStep(1)} className={secondaryButton}>
+                <Icon name="arrow_back" className="text-[18px]" />
+                {t('anon.back')}
+              </button>
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <GateReason stepId="anonymize" onNavigate={onNavigate} />
                 <button
                   type="button"
-                  onClick={addBlocklistWord}
-                  disabled={!blocklistInput.trim()}
-                  className="px-4 py-2 bg-purple-600 text-white text-sm font-bold rounded-xl hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  onClick={() => setRunVerification((prev) => !prev)}
+                  aria-pressed={runVerification}
+                  className={`${secondaryButton} ${runVerification ? 'bg-primary-fixed border-primary' : ''}`}
+                  title={t('anon.verify.title')}
                 >
-                  Add
+                  <Icon name="fact_check" className="text-[18px]" />
+                  {runVerification ? t('anon.verify.on') : t('anon.verify.off')}
                 </button>
-              </div>
-
-              {blocklist.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {blocklist.map(word => (
-                    <span
-                      key={word}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 border border-purple-200 text-purple-800 text-sm font-mono rounded-lg"
-                    >
-                      {word}
-                      <button
-                        type="button"
-                        onClick={() => removeBlocklistWord(word)}
-                        className="text-purple-400 hover:text-purple-700 transition-colors leading-none"
-                        title={`Remove "${word}"`}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-gray-400 italic">No custom words added yet.</p>
-              )}
-            </div>
-
-            {preview.length > 0 && (
-              <div className="p-5 bg-gray-50 border border-gray-200 rounded-xl">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Dataset Preview (Row 1)</p>
-                <div className="flex gap-4 overflow-x-auto pb-2 custom-scrollbar">
-                  {selectedColumns.slice(0, 4).map(col => (
-                    <div key={col} className="min-w-[200px] max-w-[250px] p-3 bg-white rounded-lg shadow-sm border border-gray-100 flex-shrink-0">
-                      <p className="text-xs font-bold text-indigo-600 mb-1 truncate">{col}</p>
-                      <p className="text-sm text-gray-700 line-clamp-3">{String(preview[0][col] || '')}</p>
-                    </div>
-                  ))}
-                  {selectedColumns.length > 4 && (
-                    <div className="min-w-[100px] flex items-center justify-center text-sm font-medium text-gray-400">
-                      +{selectedColumns.length - 4} more
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-4 pt-2">
-              <button
-                onClick={() => setStep(1)}
-                className="px-6 py-3 bg-white text-gray-700 font-bold rounded-xl hover:bg-gray-50 border border-gray-200 transition-colors"
-              >
-                Go Back
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setRunVerification(prev => !prev)}
-                className={`px-5 py-3 rounded-xl font-bold border transition-all text-sm flex items-center gap-2 ${runVerification ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}
-                title="Run Presidio verification after anonymization"
-              >
-                <span>🔍</span>
-                {runVerification ? 'Verify: On' : 'Verify: Off'}
-              </button>
-
-              <button
-                onClick={() => handleAnonymize()}
-                disabled={loading || selectedColumns.length === 0 || selectedLayers.length === 0}
-                className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 disabled:opacity-50 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center"
-              >
-                {loading ? (
-                  <span className="flex items-center gap-2">
-                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    Initializing Models...
-                  </span>
-                ) : 'Launch Anonymization Engine 🚀'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* --- STEP 3 --- */}
-        {step === 3 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-500">
-
-            <div className="p-8 bg-gray-900 rounded-3xl shadow-2xl relative overflow-hidden ring-1 ring-white/10">
-              <div className="absolute top-0 left-0 w-full h-1 bg-gray-800">
-                <div
-                  className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 transition-all duration-300 ease-out"
-                  style={{ width: `${progress}%` }}
-                ></div>
-              </div>
-
-              <div className="flex flex-col md:flex-row gap-8 items-center md:items-start justify-between">
-
-                <div className="flex-1 space-y-4 w-full">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-bold text-white flex items-center gap-3">
-                      {progress < 100 ? (
-                        <div className="relative flex h-4 w-4">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-4 w-4 bg-indigo-500"></span>
-                        </div>
-                      ) : (
-                        <span className="text-emerald-400">✓</span>
-                      )}
-                      {progress < 100 ? 'Processing Stream' : 'Anonymization Complete'}
-                    </h3>
-                    <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
-                      {progress}%
-                    </span>
-                  </div>
-
-                  <div className="p-4 bg-white/5 rounded-xl border border-white/10 backdrop-blur-sm min-h-[120px] flex flex-col justify-center">
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {selectedLayers.map((layerId) => {
-                        const layer = LAYER_OPTIONS.find((item) => item.id === layerId);
-                        return (
-                          <span key={layerId} className="text-[10px] font-black uppercase tracking-wide text-indigo-100 bg-indigo-500/20 border border-indigo-400/30 px-2 py-1 rounded-full">
-                            {layer?.name || layerId}
-                          </span>
-                        );
-                      })}
-                    </div>
-                    <p className="text-indigo-300 font-mono text-sm tracking-tight mb-2 flex items-center gap-2">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                      {statusMessage}
-                    </p>
-                    {currentPreview && (
-                      <div className="mt-2 animate-in fade-in slide-in-from-bottom-2">
-                        <p className="text-gray-400 text-xs mb-1 uppercase tracking-wider font-bold">Live Data Feed</p>
-                        <p className="text-gray-200 text-sm font-mono leading-relaxed line-clamp-2">
-                          <span className="text-emerald-400 mr-2">▶</span>
-                          {currentPreview}
-                        </p>
-                      </div>
-                    )}
-                    {lastCheckpointRow && progress < 100 && (
-                      <div className="mt-3 flex items-center gap-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
-                        <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
-                        Checkpoint opgeslagen — {lastCheckpointRow}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="w-full md:w-48 shrink-0 flex flex-col gap-3">
-                  <div className={`p-3 rounded-lg border flex items-center gap-3 transition-colors ${progress > 10 ? 'bg-indigo-500/20 border-indigo-500/30' : 'bg-gray-800 border-gray-700'}`}>
-                    <div className={`w-2 h-2 rounded-full ${progress > 10 ? 'bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.8)]' : 'bg-gray-600'}`}></div>
-                    <span className={`text-sm font-medium ${progress > 10 ? 'text-indigo-200' : 'text-gray-500'}`}>Models Loaded</span>
-                  </div>
-                  <div className={`p-3 rounded-lg border flex items-center gap-3 transition-colors ${progress > 20 ? 'bg-purple-500/20 border-purple-500/30' : 'bg-gray-800 border-gray-700'}`}>
-                    <div className={`w-2 h-2 rounded-full ${progress > 20 ? 'bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,0.8)]' : 'bg-gray-600'}`}></div>
-                    <span className={`text-sm font-medium ${progress > 20 ? 'text-purple-200' : 'text-gray-500'}`}>Analyzing Text</span>
-                  </div>
-                  <div className={`p-3 rounded-lg border flex items-center gap-3 transition-colors ${progress === 100 ? 'bg-emerald-500/20 border-emerald-500/30' : 'bg-gray-800 border-gray-700'}`}>
-                    <div className={`w-2 h-2 rounded-full ${progress === 100 ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-gray-600'}`}></div>
-                    <span className={`text-sm font-medium ${progress === 100 ? 'text-emerald-200' : 'text-gray-500'}`}>Selected Layers Applied</span>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-
-            {result?.error && (
-              <div className="p-4 bg-red-50 text-red-700 rounded-xl border border-red-200 flex items-start gap-3">
-                <svg className="w-5 h-5 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>
-                <div>
-                  <p className="font-bold">Anonymization Failed</p>
-                  <p className="text-sm mt-1">{result.error}</p>
-                </div>
-              </div>
-            )}
-
-            {showStats && result?.stats && !result?.error && (
-              <div className="p-6 bg-white border border-gray-100 rounded-2xl shadow-sm space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">🔍</span>
-                    <h3 className="font-bold text-gray-800">
-                      {result.stats.verification_skipped ? 'Anonymized Masks' : 'Anonymization Verification'}
-                    </h3>
-                  </div>
-                  {result.stats.verification_skipped
-                    ? <span className="text-xs font-bold text-slate-700 bg-slate-50 border border-slate-200 px-3 py-1 rounded-full">Verification skipped</span>
-                    : Object.values(result.stats.missed_counts ?? {}).every(v => v === 0)
-                    ? <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">All clear ✓</span>
-                    : <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">⚠ Possible leaks</span>
-                  }
-                </div>
-
-                <div className="space-y-3">
-                  {[
-                    { tag: '[NAME]',     key: 'NAME',     label: 'Names / persons',                      color: 'indigo'  },
-                    { tag: '[LOCATION]', key: 'LOCATION', label: 'Addresses / locations',                color: 'blue'    },
-                    { tag: '[PII]',      key: 'PII',      label: 'Email, phone, BSN, student nr, etc.',  color: 'purple'  },
-                    { tag: '[TITLE]',    key: 'TITLE',    label: 'Titles (Meneer, Mevrouw, etc.)',        color: 'rose'    },
-                    { tag: '[HEALTH]',   key: 'HEALTH',   label: 'Health / medical information',         color: 'emerald' },
-                  ].map(({ tag, key, label, color }) => {
-                    const removed        = result.stats.tag_counts[key] ?? 0;
-                    const missed         = result.stats.missed_counts?.[key] ?? 0;
-                    const missedSamples  = result.stats.missed_samples?.[key] ?? [];
-                    const removedSamples = result.stats.removed_samples?.[key] ?? [];
-                    const verificationSkipped = Boolean(result.stats.verification_skipped);
-                    const clean          = missed === 0;
-                    const removedOpen    = expandedCategory === `${key}-removed`;
-                    const missedOpen     = expandedCategory === `${key}-missed`;
-
-                    return (
-                      <div key={key} className={`rounded-xl border-2 overflow-hidden transition-colors ${
-                        !clean        ? 'border-amber-200'
-                        : removed > 0 ? `border-${color}-100`
-                        :               'border-gray-100'
-                      }`}>
-                        {/* Main row */}
-                        <div className={`w-full flex items-center justify-between p-4 ${
-                          !clean        ? 'bg-amber-50/40'
-                          : removed > 0 ? `bg-${color}-50/40`
-                          :               'bg-gray-50'
-                        }`}>
-                          <div className="flex items-center gap-3">
-                            <span className={`font-mono text-xs font-black px-2 py-1 rounded-md ${
-                              !clean        ? 'bg-amber-100 text-amber-700'
-                              : removed > 0 ? `bg-${color}-100 text-${color}-700`
-                              :               'bg-gray-100 text-gray-400'
-                            }`}>
-                              {tag}
-                            </span>
-                            <span className={`text-sm font-medium ${removed > 0 || !clean ? 'text-gray-700' : 'text-gray-400'}`}>
-                              {label}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-3 shrink-0 text-sm">
-                            {verificationSkipped ? (
-                              <span className={`font-bold ${removed > 0 ? `text-${color}-700` : 'text-gray-400'}`}>
-                                {removed} mask{removed === 1 ? '' : 's'}
-                              </span>
-                            ) : removed > 0 ? (
-                              <button
-                                type="button"
-                                onClick={() => setExpandedCategory(removedOpen ? null : `${key}-removed`)}
-                                className={`flex items-center gap-1.5 font-medium text-${color}-700 hover:underline cursor-pointer`}
-                              >
-                                {removed} removed
-                                <svg className={`w-4 h-4 transition-transform ${removedOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                </svg>
-                              </button>
-                            ) : null}
-                            {!clean ? (
-                              <button
-                                type="button"
-                                onClick={() => setExpandedCategory(missedOpen ? null : `${key}-missed`)}
-                                className="flex items-center gap-1.5 font-bold text-amber-700 hover:underline cursor-pointer"
-                              >
-                                <span className="flex items-center justify-center w-6 h-6 bg-amber-400 rounded-full text-white text-xs">!</span>
-                                {missed} possibly missed
-                                <svg className={`w-4 h-4 text-amber-500 transition-transform ${missedOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                </svg>
-                              </button>
-                            ) : removed > 0 ? (
-                              <span className="flex items-center justify-center w-6 h-6 bg-emerald-500 rounded-full text-white text-xs font-bold">✓</span>
-                            ) : (
-                              <span className="text-xs text-gray-400 italic">None detected</span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Removed samples panel */}
-                        {!verificationSkipped && removedOpen && (
-                          <div className={`border-t border-${color}-100 bg-white px-4 py-3 space-y-2`}>
-                            <p className={`text-xs font-bold text-${color}-700 uppercase tracking-wider mb-2`}>
-                              Removed — {removedSamples.length} unique
-                            </p>
-                            {removedSamples.length > 0 ? (
-                              <div className="flex flex-wrap gap-2">
-                                {removedSamples.map((sample, i) => (
-                                  <span key={i} className={`inline-block px-3 py-1 bg-${color}-50 border border-${color}-200 text-${color}-800 text-sm font-mono rounded-lg`}>
-                                    {sample}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-xs text-gray-400 italic">No sample data — restart the backend and re-run anonymization.</p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Missed samples panel */}
-                        {!verificationSkipped && missedOpen && (
-                          <div className="border-t border-amber-200 bg-white px-4 py-3 space-y-2">
-                            <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">
-                              Possibly missed — {missedSamples.length} unique
-                            </p>
-                            {missedSamples.length > 0 ? (
-                              <div className="flex flex-wrap gap-2">
-                                {missedSamples.map((sample, i) => (
-                                  <span key={i} className="inline-block px-3 py-1 bg-amber-50 border border-amber-200 text-amber-800 text-sm font-mono rounded-lg">
-                                    {sample}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-xs text-gray-400 italic">No sample data — restart the backend and re-run anonymization.</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm text-gray-500">
-                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  {result.stats.verification_skipped ? (
+                <button
+                  type="button"
+                  onClick={() => handleAnonymize()}
+                  disabled={loading || selectedColumns.length === 0 || selectedLayers.length === 0 || !view.canStart}
+                  className={primaryButton}
+                >
+                  {loading ? (
                     <>
-                      Scanned <strong className="text-gray-700">{result.stats.total_cells}</strong> cells for inserted masks — <strong className="text-gray-700">{result.stats.total_entities}</strong> masks found. Presidio verification was skipped.
+                      <Icon name="progress_activity" className="text-[18px] motion-safe:animate-spin" />
+                      {t('anon.start.busy')}
                     </>
                   ) : (
                     <>
-                      Checked <strong className="text-gray-700">{result.stats.total_cells}</strong> cells — <strong className="text-gray-700">{result.stats.total_entities}</strong> entities removed. Output was re-scanned to detect remaining leaks.
+                      <Icon name="shield_person" className="text-[18px]" />
+                      {t('anon.start')}
                     </>
                   )}
-                </div>
+                </button>
               </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+            </div>
+          )}
+
+          {(step === 1 || step === 2) && !loading && advanced}
+        </>
+      )}
+    </>
   );
 }

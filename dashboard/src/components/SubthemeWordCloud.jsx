@@ -2,21 +2,25 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { getThemeColor } from '../constants/themeColors'
+import { themeLabel } from '../constants/realThemes'
+import { useI18n } from '../i18n/I18nProvider'
+import Icon from './Icon.jsx'
 
 export default function SubthemeWordCloud({ themes, empty = false, missingFilteredData = false }) {
+  const { t } = useI18n()
   const words = useMemo(() => {
     if (empty || missingFilteredData) return []
     const list = []
-    themes.forEach((t) => {
-      const mentions = t.cachedInsight?.subtheme_mentions || t.subtheme_mentions || []
+    themes.forEach((th) => {
+      const mentions = th.cachedInsight?.subtheme_mentions || th.subtheme_mentions || []
       mentions.forEach((m) => {
         const count = m.mentions || 0
         if (count <= 0) return
         list.push({
           text: m.subtheme,
           count,
-          themeId: t.id,
-          themeName: t.name,
+          themeId: th.id,
+          themeName: th.name,
         })
       })
     })
@@ -31,36 +35,36 @@ export default function SubthemeWordCloud({ themes, empty = false, missingFilter
       <div className="flex items-center justify-between mb-5">
         <div>
           <h3 className="text-base md:text-lg font-bold font-headline text-primary">
-            Sub-theme Landscape
+            {t('cloud.title')}
           </h3>
           <p className="text-[11px] text-on-surface-variant/60 mt-0.5">
-            Most discussed topics across all themes — sized by mention count
+            {t('cloud.lead')}
           </p>
         </div>
       </div>
 
       {empty ? (
         <div className="flex flex-col items-center justify-center gap-2 py-8 min-h-[120px] text-center">
-          <span className="material-symbols-outlined text-3xl text-outline">layers_clear</span>
-          <p className="text-sm font-bold text-primary">No sub-themes match these filters</p>
+          <Icon name="layers_clear" className="text-3xl text-outline" />
+          <p className="text-sm font-bold text-primary">{t('cloud.noMatch.title')}</p>
           <p className="text-xs text-on-surface-variant/70">
-            The selected combination has no matching survey responses.
+            {t('cloud.noMatch.body')}
           </p>
         </div>
       ) : missingFilteredData ? (
         <div className="flex flex-col items-center justify-center gap-2 py-8 min-h-[120px] text-center">
-          <span className="material-symbols-outlined text-3xl text-outline">cloud_off</span>
-          <p className="text-sm font-bold text-primary">No filtered sub-theme data generated yet</p>
+          <Icon name="cloud_off" className="text-3xl text-outline" />
+          <p className="text-sm font-bold text-primary">{t('cloud.missing.title')}</p>
           <p className="text-xs text-on-surface-variant/70">
-            Theme counts are filtered, but sub-theme insights have not been generated for this filter set.
+            {t('cloud.missing.body')}
           </p>
         </div>
       ) : words.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-8 min-h-[120px] text-center">
-          <span className="material-symbols-outlined text-3xl text-outline">cloud_off</span>
-          <p className="text-sm font-bold text-primary">No sub-theme data available</p>
+          <Icon name="cloud_off" className="text-3xl text-outline" />
+          <p className="text-sm font-bold text-primary">{t('cloud.none.title')}</p>
           <p className="text-xs text-on-surface-variant/70">
-            Try a broader filter combination or precompute sub-theme insights.
+            {t('cloud.none.body')}
           </p>
         </div>
       ) : (
@@ -98,7 +102,7 @@ export default function SubthemeWordCloud({ themes, empty = false, missingFilter
                   fontWeight: normalized > 0.5 ? 700 : 600,
                   fontFamily: "'Manrope', sans-serif",
                 }}
-                title={`${word.text} — ${word.count} mentions (${word.themeName})`}
+                title={t('cloud.tooltip', { word: word.text, n: word.count, theme: themeLabel(t, word.themeName) })}
               >
                 {word.text}
                 <span

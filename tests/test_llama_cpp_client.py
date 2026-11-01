@@ -5,6 +5,11 @@ import unittest
 from unittest import mock
 
 
+try:
+    import isolation  # noqa: F401
+except ImportError:  # run as tests.test_llama_cpp_client
+    from tests import isolation  # noqa: F401
+
 llm_clients = import_module("src.pipeline.04_generation.llm_clients")
 llama_cpp_models = import_module("src.pipeline.04_generation.llama_cpp_models")
 
@@ -45,7 +50,7 @@ class LlamaCppClientTests(unittest.TestCase):
 
     def test_server_command_enables_mtp_for_qat_mtp_models(self) -> None:
         expected_draft_n = {
-            E2B_MODEL: "3",
+            E2B_MODEL: "2",
             E4B_MODEL: "2",
             MODEL_12B: "2",
             MODEL_26B: "2",

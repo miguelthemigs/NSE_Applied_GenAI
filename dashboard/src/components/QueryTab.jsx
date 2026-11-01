@@ -1,6 +1,21 @@
 import { useState, useEffect } from 'react';
+import { apiUrl } from '../services/api';
+import { useI18n } from '../i18n/I18nProvider';
+import Icon from './Icon';
+import GateReason from './pipeline/GateReason';
+import StepHeader from './pipeline/StepHeader';
+import { errorBox, fieldLabel, primaryButton, stepBody, textInput } from './pipeline/stepStyles';
+import { usePipelineStatus } from '../context/PipelineStatusContext';
+import { deriveStepView } from '../utils/stepView';
+import { gateErrorMessage } from '../utils/gateError';
 
-export default function QueryTab() {
+export default function QueryTab({ onNavigate }) {
+  const { t, formatNumber } = useI18n();
+  const { status } = usePipelineStatus();
+  // Searching starts no job, so only its requirements block it: a reviewed step 1 and a vector DB.
+  const view = deriveStepView(status, 'query');
+  const blocked = !status || Boolean(view.blockedBy);
+  const vectorsAt = status?.steps?.vectors?.completed_at;
   const [query, setQuery] = useState('');
   const [institution, setInstitution] = useState('all');
   const [year, setYear] = useState('all');
@@ -24,11 +39,11 @@ export default function QueryTab() {
   });
   const [optionsLoading, setOptionsLoading] = useState(true);
 
-  // Fetch filter options on mount
+  // Fetch filter options on mount, and again after a new vector DB was built
   useEffect(() => {
     const fetchFilterOptions = async () => {
       try {
-        const response = await fetch('http://localhost:5001/api/filter-options');
+        const response = await fetch(apiUrl('/api/filter-options'));
         const data = await response.json();
         
         if (data.status === 'success') {
@@ -42,12 +57,12 @@ export default function QueryTab() {
     };
     
     fetchFilterOptions();
-  }, []);
+  }, [vectorsAt]);
 
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) {
-      setError('Please enter a search query');
+      setError({ kind: 'empty' });
       return;
     }
 
@@ -69,7 +84,7 @@ export default function QueryTab() {
       if (studyMode !== 'all') params.append('study_mode', studyMode);
       if (cohort !== 'all') params.append('cohort', cohort);
 
-      const response = await fetch(`http://localhost:5001/api/query-vectors?${params}`, {
+      const response = await fetch(apiUrl(`/api/query-vectors?${params}`), {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -80,219 +95,139 @@ export default function QueryTab() {
         setResults(data.results || []);
         setSearchPerformed(true);
       } else {
-        setError(data.error || 'Search failed');
+        setError({ kind: 'failed', detail: data.error, message: gateErrorMessage(t, data) });
       }
     } catch (err) {
-      setError(err.message);
+      setError({ kind: 'failed', detail: err.message });
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold">✨ Query Vector Database</h2>
-        <p className="text-gray-600 mt-1">Ask natural language questions about your anonymized feedback</p>
-      </div>
+  const FILTERS = [
+    { key: 'institution', label: 'query.f.institution', value: institution, set: setInstitution, options: filterOptions.institutions },
+    { key: 'year', label: 'query.f.year', value: year, set: setYear, options: filterOptions.academic_years },
+    { key: 'location', label: 'query.f.location', value: location, set: setLocation, options: filterOptions.locations },
+    { key: 'programme', label: 'query.f.programme', value: programme, set: setProgramme, options: filterOptions.programmes },
+    { key: 'studyMode', label: 'query.f.studyMode', value: studyMode, set: setStudyMode, options: filterOptions.study_modes },
+    { key: 'cohort', label: 'query.f.cohort', value: cohort, set: setCohort, options: filterOptions.cohorts },
+  ];
 
-      {/* Search Form */}
-      <form onSubmit={handleSearch} className="space-y-4">
-        <div className="bg-gray-50 p-4 rounded-lg space-y-4 border border-gray-200">
-          
-          {/* Query Input */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Your Question</label>
+  return (
+    <>
+      <StepHeader stepId="query" />
+      <div className={stepBody}>
+        <form onSubmit={handleSearch} className="flex flex-col gap-5">
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabel}>{t('query.question')}</span>
             <textarea
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g., What do students say about the teaching quality?"
+              placeholder={t('query.placeholder')}
               disabled={loading}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none disabled:opacity-50"
+              className={`${textInput} py-3 resize-none`}
               rows="3"
             />
+          </label>
+
+          <fieldset className="m-0 p-0 border-0 flex flex-col gap-3 min-w-0">
+            <legend className={`${fieldLabel} p-0 mb-3`}>{t('query.filters')}</legend>
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-3 gap-3">
+              {FILTERS.map((f) => (
+                <label key={f.key} className="flex flex-col gap-1 min-w-0">
+                  <span className="text-[13px] font-semibold text-on-surface-variant">{t(f.label)}</span>
+                  <select
+                    value={f.value}
+                    onChange={(e) => f.set(e.target.value)}
+                    disabled={loading || optionsLoading}
+                    className={textInput}
+                  >
+                    <option value="all">{t('common.all')}</option>
+                    {(f.options ?? []).map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <button
+              type="submit"
+              disabled={loading || optionsLoading || blocked}
+              className={`${primaryButton} max-sm:w-full min-h-[48px] text-[15px]`}
+            >
+              {loading ? (
+                <>
+                  <Icon name="progress_activity" className="text-[20px] motion-safe:animate-spin" />
+                  {t('query.searching')}
+                </>
+              ) : (
+                <>
+                  <Icon name="search" className="text-[20px]" />
+                  {t('query.search')}
+                </>
+              )}
+            </button>
+            <GateReason stepId="query" showBusy={false} onNavigate={onNavigate} />
           </div>
+        </form>
 
-          {/* Filters */}
-          <div className="space-y-3">
-            <p className="text-sm font-semibold text-gray-700">🔍 Filters (optional)</p>
-            
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-              {/* Institution */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Institution</label>
-                <select
-                  value={institution}
-                  onChange={(e) => setInstitution(e.target.value)}
-                  disabled={loading || optionsLoading}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                >
-                  <option value="all">All</option>
-                  {filterOptions.institutions.map(inst => (
-                    <option key={inst} value={inst}>{inst}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Academic Year */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Academic Year</label>
-                <select
-                  value={year}
-                  onChange={(e) => setYear(e.target.value)}
-                  disabled={loading || optionsLoading}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                >
-                  <option value="all">All</option>
-                  {filterOptions.academic_years.map(yr => (
-                    <option key={yr} value={yr}>{yr}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Location */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Location</label>
-                <select
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  disabled={loading || optionsLoading}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                >
-                  <option value="all">All</option>
-                  {filterOptions.locations.map(loc => (
-                    <option key={loc} value={loc}>{loc}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Programme */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Programme</label>
-                <select
-                  value={programme}
-                  onChange={(e) => setProgramme(e.target.value)}
-                  disabled={loading || optionsLoading}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                >
-                  <option value="all">All</option>
-                  {filterOptions.programmes.map(prog => (
-                    <option key={prog} value={prog}>{prog}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Study Mode */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Study Mode</label>
-                <select
-                  value={studyMode}
-                  onChange={(e) => setStudyMode(e.target.value)}
-                  disabled={loading || optionsLoading}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                >
-                  <option value="all">All</option>
-                  {filterOptions.study_modes.map(mode => (
-                    <option key={mode} value={mode}>{mode}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Cohort */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Cohort</label>
-                <select
-                  value={cohort}
-                  onChange={(e) => setCohort(e.target.value)}
-                  disabled={loading || optionsLoading}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                >
-                  <option value="all">All</option>
-                  {filterOptions.cohorts.map(coh => (
-                    <option key={coh} value={coh}>{coh}</option>
-                  ))}
-                </select>
-              </div>
+        {error && (
+          <div role="alert" className={errorBox}>
+            <Icon name="error" className="text-[22px] shrink-0" />
+            <div className="min-w-0">
+              <p className="m-0 font-bold">{t(error.kind === 'empty' ? 'query.err.empty' : 'query.err.title')}</p>
+              {error.message && <p className="m-0 mt-1 text-sm">{error.message}</p>}
+              {error.detail && (
+                <details className="mt-1 text-sm">
+                  <summary className="cursor-pointer">{t('action.details')}</summary>
+                  <p className="mt-1 break-words">{error.detail}</p>
+                </details>
+              )}
             </div>
           </div>
+        )}
 
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={loading || optionsLoading}
-            className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg transition flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <span className="animate-spin">⏳</span>
-                Searching...
-              </>
-            ) : (
-              <>
-                <span>🔍</span>
-                Search Database
-              </>
-            )}
-          </button>
-        </div>
-      </form>
-
-      {/* Error State */}
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-          <strong>❌ Error:</strong> {error}
-        </div>
-      )}
-
-      {/* Results */}
-      {searchPerformed && !loading && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-gray-800">
-              📊 Results for "{query}"
+        {searchPerformed && !loading && (
+          <section className="flex flex-col gap-3 min-w-0">
+            <h3 className="m-0 text-base font-bold text-on-surface break-words">
+              {t('query.results', { n: formatNumber(results.length), q: query })}
             </h3>
-            <span className="text-sm text-gray-600">
-              {results.length} found
-            </span>
-          </div>
 
-          {results.length === 0 ? (
-            <div className="p-6 text-center bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-gray-600">No results found. Try a different query or adjust filters.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {results.map((result, idx) => (
-                <div
-                  key={idx}
-                  className="p-4 bg-blue-50 border border-blue-200 rounded-lg hover:shadow-md transition"
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <span className="font-bold text-blue-700">#{idx + 1}</span>
-                    <div className="flex gap-2 text-xs flex-wrap justify-end">
+            {results.length === 0 ? (
+              <p className="m-0 rounded-[12px] bg-surface-container-low p-6 text-center text-on-surface-variant">{t('query.none')}</p>
+            ) : (
+              <ol className="m-0 p-0 list-none flex flex-col gap-3">
+                {results.map((result, idx) => (
+                  <li key={idx} className="border border-outline-variant rounded-[12px] p-4 flex flex-col gap-2 min-w-0">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-headline font-extrabold text-primary">#{idx + 1}</span>
                       {result.similarity !== undefined && (
-                        <span className="px-2 py-1 bg-green-200 text-green-800 rounded">
-                          Match: {(result.similarity * 100).toFixed(1)}%
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary-fixed text-primary">
+                          {t('query.match', { x: Math.round(result.similarity * 100) })}
                         </span>
                       )}
                     </div>
-                  </div>
-                  <p className="text-gray-700 leading-relaxed">{result.document}</p>
-                  {result.metadata && Object.keys(result.metadata).length > 0 && (
-                    <div className="mt-3 text-xs text-gray-600 space-y-1">
-                      {Object.entries(result.metadata).map(([key, val]) => (
-                        <div key={key}>
-                          <strong>{key}:</strong> {val}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+                    <p className="m-0 text-on-surface leading-relaxed break-words">{result.document}</p>
+                    {result.metadata && Object.keys(result.metadata).length > 0 && (
+                      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-on-surface-variant">
+                        {Object.entries(result.metadata).map(([key, val]) => (
+                          <div key={key} className="contents">
+                            <dt className="font-semibold">{key}</dt>
+                            <dd className="m-0 break-words">{String(val)}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        )}
+      </div>
+    </>
   );
 }

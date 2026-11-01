@@ -83,3 +83,11 @@ gemma_subtheme_cache.json
 graphify-out/*
 
 backups/*
+
+# Playwright e2e
+dashboard/test-results/
+dashboard/playwright-report/
+dashboard/e2e/__screens__/
+
+# Runtime pid files (the app writes and removes them)
+logs/*.pid

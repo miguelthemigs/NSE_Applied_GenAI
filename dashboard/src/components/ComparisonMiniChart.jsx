@@ -1,3 +1,5 @@
+import Icon from './Icon.jsx'
+
 export default function ComparisonMiniChart({ theme, filters }) {
   if (!theme) return null
 
@@ -13,7 +15,7 @@ export default function ComparisonMiniChart({ theme, filters }) {
     <div className="bg-surface-container-low rounded-xl p-4 md:p-6 flex flex-col gap-4">
       <div className="flex justify-between items-center">
         <h3 className="text-base md:text-lg font-bold font-headline text-primary">Study Mode</h3>
-        <span className="material-symbols-outlined text-outline text-xl">compare_arrows</span>
+        <Icon name="compare_arrows" className="text-outline text-xl" />
       </div>
       <div className="flex flex-col gap-3">
         {bars.map((bar) => {

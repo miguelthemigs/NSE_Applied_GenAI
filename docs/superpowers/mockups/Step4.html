@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>Stap 4 samenvattingen schrijven</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@600;700;800&amp;display=swap">
+<style>
+body{margin:0;background:#f8f9fa}
+a{color:#002f59}a:hover{color:#00467f}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #f8f9fa; color: #191c1d; font-family: Inter, system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+
+<nav style="background: #002f59; color: #ffffff">
+<div style="max-width: 1040px; margin: 0 auto; padding: 0 24px; height: 60px; display: flex; align-items: center; gap: 28px; flex-wrap: wrap">
+<span style="font-family: Manrope, sans-serif; font-weight: 800; font-size: 18px; letter-spacing: -0.01em">NSE Insights</span>
+<div style="display: flex; gap: 4px; flex-grow: 1">
+<a href="Overview.dc.html" style="color: #d3e3ff; text-decoration: none; padding: 8px 12px; border-radius: 8px; font-weight: 500">Overzicht</a>
+<a href="#" style="color: #ffffff; text-decoration: none; padding: 8px 12px; border-radius: 8px; font-weight: 600; background: #00467f">Analyse</a>
+</div>
+<div style="display: flex; background: #00467f; border-radius: 10px; padding: 3px">
+<button type="button" aria-pressed="true" style="border: 0; background: #ffffff; color: #002f59; font: 600 13px Inter, sans-serif; padding: 6px 12px; border-radius: 8px; min-height: 32px">NL</button>
+<button type="button" aria-pressed="false" style="border: 0; background: transparent; color: #d3e3ff; font: 600 13px Inter, sans-serif; padding: 6px 12px; border-radius: 8px; min-height: 32px">EN</button>
+</div>
+</div>
+</nav>
+
+<main style="max-width: 1040px; margin: 0 auto; padding: 32px 24px 64px; display: flex; flex-direction: column; gap: 20px">
+
+<header style="display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap">
+<div style="display: flex; flex-direction: column; gap: 6px; max-width: 640px">
+<h1 style="margin: 0; font-family: Manrope, sans-serif; font-weight: 800; font-size: 32px; line-height: 1.15; color: #002f59; letter-spacing: -0.02em">Analyse in 5 stappen</h1>
+<p style="margin: 0; color: #424750">Van ruwe enquêtereacties naar samenvattingen op het Overzicht. Je werk wordt bewaard, ook na een herstart.</p>
+</div>
+<span style="color: #424750; font-size: 13px">Laatst bijgewerkt 31 okt 2026, 15:02</span>
+</header>
+
+<div role="tablist" aria-label="Stappen" style="background: #ffffff; border: 1px solid #c2c6d1; border-radius: 16px; padding: 20px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px">
+<button type="button" role="tab" aria-selected="false" style="border: 0; background: transparent; border-radius: 12px; padding: 12px; text-align: left; display: flex; flex-direction: column; gap: 8px; font-family: Inter, sans-serif">
+<span style="width: 36px; height: 36px; border-radius: 50%; background: #002f59; color: #ffffff; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+<span style="font-weight: 600; font-size: 14px; color: #191c1d; line-height: 1.3">Persoonsgegevens verwijderen</span>
+<span style="font-size: 13px; color: #1e7a3a; font-weight: 600">Klaar</span>
+</button>
+<button type="button" role="tab" aria-selected="false" style="border: 0; background: transparent; border-radius: 12px; padding: 12px; text-align: left; display: flex; flex-direction: column; gap: 8px; font-family: Inter, sans-serif">
+<span style="width: 36px; height: 36px; border-radius: 50%; background: #002f59; color: #ffffff; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+<span style="font-weight: 600; font-size: 14px; color: #191c1d; line-height: 1.3">Antwoorden doorzoekbaar maken</span>
+<span style="font-size: 13px; color: #1e7a3a; font-weight: 600">Klaar</span>
+</button>
+<button type="button" role="tab" aria-selected="false" style="border: 0; background: transparent; border-radius: 12px; padding: 12px; text-align: left; display: flex; flex-direction: column; gap: 8px; font-family: Inter, sans-serif">
+<span style="width: 36px; height: 36px; border-radius: 50%; border: 2px dashed #727781; color: #727781; display: flex; align-items: center; justify-content: center; box-sizing: border-box"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"></path></svg></span>
+<span style="font-weight: 600; font-size: 14px; color: #424750; line-height: 1.3">Thema's controleren</span>
+<span style="font-size: 13px; color: #727781">Overgeslagen</span>
+</button>
+<button type="button" role="tab" aria-selected="true" style="border: 0; background: #d3e3ff; border-radius: 12px; padding: 12px; text-align: left; display: flex; flex-direction: column; gap: 8px; font-family: Inter, sans-serif">
+<span style="width: 36px; height: 36px; border-radius: 50%; border: 2px solid #002f59; background: linear-gradient(90deg, #002f59 50%, #ffffff 50%); display: flex; align-items: center; justify-content: center; box-sizing: border-box"></span>
+<span style="font-weight: 700; font-size: 14px; color: #191c1d; line-height: 1.3">Samenvattingen schrijven</span>
+<span style="font-size: 13px; color: #002f59; font-weight: 600">Deels klaar (3 van 7)</span>
+</button>
+<button type="button" role="tab" aria-selected="false" style="border: 0; background: transparent; border-radius: 12px; padding: 12px; text-align: left; display: flex; flex-direction: column; gap: 8px; font-family: Inter, sans-serif">
+<span style="width: 36px; height: 36px; border-radius: 50%; border: 2px solid #002f59; color: #002f59; display: flex; align-items: center; justify-content: center; box-sizing: border-box"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h12v9H8l-4 3z"></path><path d="M16 9h4v9l-3-2.5h-6v-1.5"></path></svg></span>
+<span style="font-weight: 600; font-size: 14px; color: #424750; line-height: 1.3">Stel een vraag</span>
+<span style="font-size: 13px; color: #002f59; font-weight: 600">Klaar voor gebruik</span>
+</button>
+</div>
+
+<section role="tabpanel" aria-label="Samenvattingen schrijven" style="background: #ffffff; border: 1px solid #c2c6d1; border-radius: 16px; overflow: hidden">
+
+<div style="padding: 24px; display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; border-bottom: 1px solid #e1e3e4">
+<span style="width: 44px; height: 44px; border-radius: 12px; background: #d3e3ff; color: #002f59; display: flex; align-items: center; justify-content: center; flex-shrink: 0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="M9 11h7M9 15h7M9 7h3"></path></svg></span>
+<div style="flex: 999 1 400px; display: flex; flex-direction: column; gap: 4px; min-width: 0">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: #424750">STAP 4 VAN 5</span>
+<h2 style="margin: 0; font-family: Manrope, sans-serif; font-weight: 800; font-size: 24px; color: #002f59">Samenvattingen schrijven</h2>
+<p style="margin: 0; color: #424750">De AI schrijft per thema een samenvatting met voorbeeldreacties en verbeterpunten. Die verschijnen op het Overzicht.</p>
+</div>
+<span style="background: #d3e3ff; color: #002f59; font-weight: 600; font-size: 13px; padding: 6px 12px; border-radius: 999px; white-space: nowrap">Deels klaar (3 van 7)</span>
+</div>
+
+<div style="padding: 24px; display: flex; flex-direction: column; gap: 24px">
+
+<fieldset style="border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px">
+<legend style="font-weight: 700; font-size: 16px; padding: 0; margin-bottom: 12px">Hoe grondig?</legend>
+<div role="radiogroup" aria-label="Hoe grondig?" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
+<label style="border: 1px solid #c2c6d1; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; background: #ffffff">
+<span style="display: flex; align-items: center; gap: 10px"><input type="radio" name="tier" style="width: 18px; height: 18px; accent-color: #002f59; margin: 0"><span style="font-weight: 700; font-size: 16px">Snel</span></span>
+<span style="color: #424750; font-size: 14px">Goed voor een eerste indruk. Kleinste download.</span>
+<span style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px"><span style="background: #f3f4f5; color: #424750; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px">2,6 GB</span><span style="background: #f3f4f5; color: #424750; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px">Eenmalige download</span></span>
+</label>
+<label style="border: 2px solid #002f59; border-radius: 12px; padding: 15px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; background: #f5f9ff">
+<span style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap"><input type="radio" name="tier" checked="checked" style="width: 18px; height: 18px; accent-color: #002f59; margin: 0"><span style="font-weight: 700; font-size: 16px">Gebalanceerd</span><span style="background: #002f59; color: #ffffff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.03em">AANBEVOLEN</span></span>
+<span style="color: #424750; font-size: 14px">De beste mix van snelheid en kwaliteit voor de meeste rapporten.</span>
+<span style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px"><span style="background: #ffffff; color: #424750; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; border: 1px solid #c2c6d1">6,2 GB</span><span style="background: #e6f4ea; color: #1e7a3a; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px">Al op deze computer</span></span>
+</label>
+<label style="border: 1px solid #c2c6d1; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; background: #ffffff">
+<span style="display: flex; align-items: center; gap: 10px"><input type="radio" name="tier" style="width: 18px; height: 18px; accent-color: #002f59; margin: 0"><span style="font-weight: 700; font-size: 16px">Meest grondig</span></span>
+<span style="color: #424750; font-size: 14px">De beste kwaliteit voor het eindrapport. Het traagst; vraagt een krachtige computer.</span>
+<span style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px"><span style="background: #f3f4f5; color: #424750; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px">16,9 GB</span><span style="background: #f3f4f5; color: #424750; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px">Eenmalige download</span></span>
+</label>
+</div>
+</fieldset>
+
+<label style="display: flex; gap: 12px; align-items: flex-start; border: 1px solid #c2c6d1; border-radius: 12px; padding: 14px 16px; cursor: pointer">
+<input type="checkbox" style="width: 20px; height: 20px; accent-color: #002f59; margin: 2px 0 0; flex-shrink: 0">
+<span style="display: flex; flex-direction: column; gap: 2px">
+<span style="font-weight: 600">Ook samenvattingen voor elke combinatie van jaar, locatie en opleiding</span>
+<span style="color: #424750; font-size: 14px">Duurt langer: [AANTAL] samenvattingen, ongeveer [MIN] min. Boven de 500 vragen we eerst om bevestiging.</span>
+</span>
+</label>
+
+<div style="display: flex; justify-content: flex-start">
+<button type="button" style="border: 0; background: #002f59; color: #ffffff; font: 600 15px Inter, sans-serif; padding: 12px 22px; border-radius: 10px; min-height: 48px; display: flex; align-items: center; gap: 10px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="M9 11h7M9 15h7M9 7h3"></path></svg>Samenvattingen schrijven</button>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<h3 style="margin: 0; font-size: 16px; font-weight: 700">Resultaten</h3>
+<ul style="list-style: none; margin: 0; padding: 0; border: 1px solid #c2c6d1; border-radius: 12px; overflow: hidden">
+<li style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #e1e3e4; flex-wrap: wrap">
+<span style="flex: 1 1 220px; font-weight: 600">Hoofdthema's</span>
+<span style="color: #424750; font-variant-numeric: tabular-nums; min-width: 60px">3 / 7</span>
+<span style="background: #d3e3ff; color: #002f59; font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 999px">Deels klaar</span>
+</li>
+<li style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #e1e3e4; flex-wrap: wrap">
+<span style="flex: 1 1 220px; font-weight: 600">Subthema's</span>
+<span style="color: #424750; font-variant-numeric: tabular-nums; min-width: 60px">0</span>
+<span style="background: #f3f4f5; color: #424750; font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 999px">Nog niet gedaan</span>
+</li>
+<li style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; flex-wrap: wrap">
+<span style="flex: 1 1 220px; font-weight: 600; color: #424750">Per jaar, locatie en opleiding</span>
+<span style="color: #727781; min-width: 60px">—</span>
+<span style="background: #ffffff; color: #727781; font-size: 13px; font-weight: 600; padding: 3px 11px; border-radius: 999px; border: 1px dashed #c2c6d1">Uit</span>
+</li>
+</ul>
+</div>
+
+</div>
+
+<div style="padding: 16px 24px; border-top: 1px solid #e1e3e4; display: flex; gap: 12px; align-items: center; justify-content: flex-end; flex-wrap: wrap">
+<a href="Overview.dc.html" style="border: 1px solid #c2c6d1; background: #ffffff; color: #002f59; font: 600 14px Inter, sans-serif; padding: 10px 16px; border-radius: 10px; min-height: 24px; text-decoration: none; display: flex; align-items: center; gap: 8px">Bekijk het Overzicht<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+</div>
+
+<details style="border-top: 1px solid #e1e3e4; background: #f8f9fa">
+<summary style="padding: 14px 24px; color: #424750; font-weight: 600; cursor: pointer">Geavanceerd</summary>
+<div style="padding: 4px 24px 20px; display: flex; flex-direction: column; gap: 10px; color: #424750; font-size: 14px">
+<span>Antwoorden per thema: 60 (snel) · 240 (standaard) · alle</span>
+<span>Extra filters: studievorm, taal</span>
+<span>Model automatisch starten</span>
+<span>Technische modelnamen</span>
+<span style="color: #ba1a1a; font-weight: 600">Opgeslagen samenvattingen wissen (vraagt bevestiging)</span>
+</div>
+</details>
+
+</section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1400}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

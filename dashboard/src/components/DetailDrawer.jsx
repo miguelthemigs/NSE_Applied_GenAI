@@ -1,9 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { useThemeSummary } from '../hooks/useThemeSummary'
+import { useI18n } from '../i18n/I18nProvider'
+import { llmErrorKey } from '../utils/downloadProgress'
+import Icon from './Icon.jsx'
 
 // Removed static DonutChart as per user request
 
 export default function DetailDrawer({ theme, onClose }) {
+  const { t } = useI18n()
   const drawerRef = useRef(null)
   const { liveData, loadingLive } = useThemeSummary(theme)
 
@@ -41,7 +45,7 @@ export default function DetailDrawer({ theme, onClose }) {
           <div className="flex items-center gap-2">
             {onClose && (
               <button onClick={onClose} className="p-1 rounded hover:bg-white/10 transition-colors">
-                <span className="material-symbols-outlined text-sm">close</span>
+                <Icon name="close" className="text-sm" />
               </button>
             )}
           </div>
@@ -55,7 +59,7 @@ export default function DetailDrawer({ theme, onClose }) {
         <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
           <div className="flex justify-between items-center mb-3">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-blue-600">psychology</span>
+              <Icon name="psychology" className="text-blue-600" />
               <h4 className="text-sm font-bold text-blue-900">Gemma 4 Insights</h4>
             </div>
             {loadingLive && (
@@ -74,7 +78,11 @@ export default function DetailDrawer({ theme, onClose }) {
             </div>
           ) : liveData?.error ? (
             <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">
-              ⚠️ {liveData.error}
+              <p>{t(llmErrorKey(liveData.code) ?? 'detail.queryFailed')}</p>
+              <details>
+                <summary className="cursor-pointer">{t('action.details')}</summary>
+                <p className="mt-1 break-words">{liveData.error}</p>
+              </details>
             </div>
           ) : liveData ? (
             <div className="space-y-4 animate-in fade-in duration-500">
@@ -83,13 +91,13 @@ export default function DetailDrawer({ theme, onClose }) {
               </p>
             </div>
           ) : (
-            <p className="text-xs text-blue-600/70 italic">Vector database query failed or offline.</p>
+            <p className="text-xs text-blue-600/70 italic">{t('detail.queryFailed')}</p>
           )}
         </div>
 
         {/* Frequency */}
         <div className="flex items-center gap-3 bg-surface-container-low rounded-xl p-3">
-          <span className="material-symbols-outlined text-outline text-sm">bar_chart</span>
+          <Icon name="bar_chart" className="text-outline text-sm" />
           <span className="text-sm font-semibold text-on-surface">
             Relevant responses for this theme:{' '}
             <span className="text-primary font-bold">{theme.percentage}%</span>

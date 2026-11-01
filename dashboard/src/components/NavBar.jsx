@@ -1,58 +1,47 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useI18n } from '../i18n/I18nProvider.jsx'
+import LanguageToggle from './LanguageToggle.jsx'
+import Icon from './Icon.jsx'
 
 export default function NavBar() {
   const location = useLocation()
+  const { t } = useI18n()
 
   const links = [
-    { to: '/', label: 'Overview', icon: 'dashboard' },
-    { to: '/pipeline-demo', label: 'Pipeline', icon: 'sync' },
+    { to: '/', label: t('nav.overview'), icon: 'dashboard' },
+    { to: '/pipeline-demo', label: t('nav.pipeline'), icon: 'sync' },
   ]
 
   return (
-    <nav className="sticky top-0 z-50 bg-primary/95 glass-panel border-b border-white/10 shadow-lg">
-      <div className="max-w-[1280px] mx-auto px-4 md:px-8 flex items-center justify-between h-16">
-        {/* Brand */}
+    <nav className="sticky top-0 z-50 bg-primary text-on-primary">
+      <div className="max-w-[1040px] mx-auto px-4 sm:px-6 h-14 sm:h-[60px] flex items-center gap-3 sm:gap-7">
         <Link
           to={{ pathname: '/', search: location.search }}
-          className="flex items-center gap-2.5 group no-underline"
+          className="font-headline font-extrabold text-[17px] sm:text-lg tracking-[-0.01em] text-on-primary no-underline whitespace-nowrap"
         >
-          <span
-            className="material-symbols-outlined text-2xl text-white/90 group-hover:text-white transition-colors"
-            style={{ fontVariationSettings: "'FILL' 1" }}
-          >
-            insights
-          </span>
-          <span className="text-lg font-extrabold font-headline text-white tracking-tight">
-            NSE<span className="text-primary-fixed-dim"> Insights</span>
-          </span>
+          NSE Insights
         </Link>
 
-        {/* Nav links */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 grow">
           {links.map((link) => {
             const isActive = location.pathname === link.to
             return (
               <Link
                 key={link.to}
                 to={link.to === '/' ? { pathname: '/', search: location.search } : link.to}
-                className={`
-                  relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold
-                  transition-all duration-200 no-underline
-                  ${isActive
-                    ? 'bg-white/15 text-white shadow-sm'
-                    : 'text-white/70 hover:text-white hover:bg-white/8'
-                  }
-                `}
+                aria-current={isActive ? 'page' : undefined}
+                className={`flex items-center gap-2 min-h-[40px] px-3 py-2 rounded-xl text-[15px] no-underline transition-colors duration-150 ${
+                  isActive ? 'bg-primary-container text-on-primary font-semibold' : 'text-primary-fixed font-medium hover:text-on-primary hover:bg-primary-container/60'
+                }`}
               >
-                <span className="material-symbols-outlined text-lg">{link.icon}</span>
-                <span className="hidden sm:inline">{link.label}</span>
-                {isActive && (
-                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-primary-fixed-dim rounded-full" />
-                )}
+                <Icon name={link.icon} className="sm:hidden text-[20px]" />
+                <span className="sr-only sm:not-sr-only">{link.label}</span>
               </Link>
             )
           })}
         </div>
+
+        <LanguageToggle />
       </div>
     </nav>
   )

@@ -9,6 +9,11 @@ from unittest import mock
 import chromadb
 import numpy as np
 
+try:
+    import isolation  # noqa: F401
+except ImportError:  # run as tests.test_theme_retrieval_quality
+    from tests import isolation  # noqa: F401
+
 from src.config.settings import (
     HIERARCHICAL_RAG_BATCH_DOCUMENTS,
     INSIGHT_CACHE_VERSION,

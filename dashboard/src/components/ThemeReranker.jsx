@@ -1,36 +1,90 @@
 import { useEffect, useState } from 'react';
+import { useNdjsonStream } from '../hooks/useNdjsonStream';
+import { apiUrl, postJson } from '../services/api';
+import { useI18n } from '../i18n/I18nProvider';
+import GateReason from './pipeline/GateReason';
+import ProgressPanel from './pipeline/ProgressPanel';
+import Icon from './Icon';
+import DoneCard from './pipeline/DoneCard';
+import StepHeader from './pipeline/StepHeader';
+import {
+  advancedBody, advancedDetails, advancedSummary, checkbox, errorBox, fieldLabel, linkButton, noteBox,
+  primaryButton, secondaryButton, stepBody, stepFooter, textInput,
+} from './pipeline/stepStyles';
+import { usePipelineStatus } from '../context/PipelineStatusContext';
+import { deriveStepView } from '../utils/stepView';
+import { DONE_CARD_STATES } from '../utils/doneMessage';
+import { downloadFromEvent, streamErrorKey } from '../utils/downloadProgress';
+import { gateErrorMessage } from '../utils/gateError';
 
 const DEFAULT_RERANKER = 'zeroentropy/zerank-2-reranker';
 
-export default function ThemeReranker({ onSuccess }) {
+export default function ThemeReranker({ onNavigate }) {
+  const { t } = useI18n();
+  const stream = useNdjsonStream();
+  const { status: pipeline, refresh } = usePipelineStatus();
+  const view = deriveStepView(pipeline, 'rerank');
+  const vectorsAt = pipeline?.steps?.vectors?.completed_at;
+  const rerank = pipeline?.steps?.rerank;
   const [status, setStatus] = useState(null);
+  // True while the user sets up a new run (or reads its error) instead of the Done card.
+  const [rerunning, setRerunning] = useState(false);
+  // A run succeeded but the status that shows it could not be loaded.
+  const [statusNotice, setStatusNotice] = useState(false);
+  const [skipping, setSkipping] = useState(false);
+  const [skipError, setSkipError] = useState(null);
   const [rerankerModel, setRerankerModel] = useState(DEFAULT_RERANKER);
   const [allowModelDownload, setAllowModelDownload] = useState(true);
   const [maxDocuments, setMaxDocuments] = useState('');
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentStage, setCurrentStage] = useState('');
+  const [logs, setLogs] = useState([]);
+  const [download, setDownload] = useState(null);
   const [result, setResult] = useState(null);
 
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const res = await fetch('http://localhost:5001/api/status');
+        const res = await fetch(apiUrl('/api/status'));
         const data = await res.json();
         if (data.status === 'success') setStatus(data);
       } catch (e) {
-        setStatus({ error: 'Could not connect to the backend.' });
+        setStatus({ error: 'connect' });
       }
     };
     fetchStatus();
-  }, []);
+  }, [vectorsAt]);
+
+  // Skipping is saved server-side; the response is the new pipeline status.
+  const handleSkip = async () => {
+    if (!view.canStart || skipping) return;
+    setSkipping(true);
+    setSkipError(null);
+    try {
+      const res = await postJson('/api/pipeline/skip-rerank', { skipped: true });
+      if (res.ok) onNavigate?.('insights');
+      else setSkipError(res.data?.error || res.data?.message || `HTTP ${res.status}`);
+    } catch (e) {
+      setSkipError(e.message);
+    } finally {
+      setSkipping(false);
+      refresh();
+    }
+  };
 
   const handleRerank = async () => {
     setLoading(true);
+    setRerunning(true);
+    setStatusNotice(false);
     setProgress(0);
-    setCurrentStage('Preparing reranker pass...');
+    setCurrentStage('');
+    setLogs([]);
+    setDownload(null);
     setResult(null);
 
+    let sawEvent = false;
+    let succeeded = false;
     try {
       const payload = {
         reranker_model: rerankerModel.trim() || DEFAULT_RERANKER,
@@ -40,192 +94,185 @@ export default function ThemeReranker({ onSuccess }) {
         payload.max_documents = Number(maxDocuments);
       }
 
-      const response = await fetch('http://localhost:5001/api/rerank-theme-assignments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.body) throw new Error('ReadableStream not available.');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let done = false;
-
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-        if (!value) continue;
-
-        const chunk = decoder.decode(value, { stream: true });
-        for (const line of chunk.split('\n')) {
-          if (!line.trim()) continue;
-          const data = JSON.parse(line.trim());
+      await stream.start('/api/rerank-theme-assignments', payload, {
+        onEvent: (data) => {
+          if (!sawEvent) {
+            sawEvent = true;
+            refresh();
+          }
           if (data.status === 'progress') {
+            setDownload(downloadFromEvent(data));
             if (data.progress !== undefined) setProgress(data.progress);
-            if (data.message) setCurrentStage(data.message);
+            if (data.stage) setCurrentStage(data.stage);
+            if (data.message) setLogs(prev => [...prev, data.message]);
           } else if (data.status === 'success') {
-            setResult(data);
+            setDownload(null);
             setProgress(100);
-            setCurrentStage('Reranker assignments finalized.');
-            setTimeout(() => onSuccess?.(), 1200);
+            setCurrentStage('save');
+            succeeded = true;
           } else if (data.status === 'error') {
-            setResult({ error: data.error });
-            setCurrentStage('Reranker failed.');
-            done = true;
-            break;
+            setDownload(null);
+            setResult({ error: data.error, code: data.code });
           }
         }
-      }
+      });
     } catch (error) {
-      setResult({ error: error.message });
-      setCurrentStage('Reranker failed.');
+      setResult({ error: error.message, message: gateErrorMessage(t, error) });
     } finally {
+      // Keep the panel until the refreshed status shows the result (no blank step).
+      const refreshed = await refresh();
       setLoading(false);
+      if (succeeded) {
+        setRerunning(false);
+        if (!refreshed?.status) setStatusNotice(true);
+      }
     }
   };
 
-  const vectorReady = Boolean(status?.vector_db_ready);
+  const showSkip = !['done', 'skipped', 'stale'].includes(view.state);
+  const showDone = DONE_CARD_STATES.has(view.state) && !loading && !rerunning;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 p-6 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100">
-      <div className="flex items-center space-x-4 pb-4 border-b border-gray-100">
-        <div className="p-3 bg-gradient-to-tr from-indigo-500 to-sky-500 text-white rounded-xl shadow-lg">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-          </svg>
-        </div>
-        <div>
-          <h2 className="text-3xl font-extrabold tracking-tight text-gray-900">Theme Reranker</h2>
-          <p className="text-gray-500 text-sm mt-1">Resolve embedding-ambiguous rows into one final theme assignment</p>
-        </div>
-      </div>
+    <>
+      <StepHeader stepId="rerank" />
 
-      {!loading && !result && (
-        <div className="space-y-6">
-          {!vectorReady && (
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
-              Build the vector database before running the reranker stage.
-            </div>
-          )}
+      {showDone ? (
+        <DoneCard
+          stepId="rerank"
+          stepView={view}
+          summary={rerank?.summary}
+          completedAt={rerank?.completed_at}
+          onContinue={() => onNavigate?.('insights')}
+          onRunAgain={() => { setResult(null); setRerunning(true); }}
+        />
+      ) : (
+        <>
+          <div className={stepBody}>
+            {statusNotice && (
+              <p role="alert" className="m-0 rounded-[12px] bg-error-container text-on-error-container px-4 py-3 font-medium">{t('pipeline.statusError')}</p>
+            )}
 
-          {vectorReady && (
-            <div className="grid md:grid-cols-3 gap-4">
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Vector DB</p>
-                <p className="text-lg font-black text-slate-900 mt-1">Ready</p>
-              </div>
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Reranker Status</p>
-                <p className="text-lg font-black text-slate-900 mt-1">{status?.theme_reranker_status || 'not_run'}</p>
-              </div>
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Current Model</p>
-                <p className="text-sm font-black text-slate-900 mt-2 break-words">{status?.theme_reranker_model || 'disabled'}</p>
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-4 p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
-            <label className="block">
-              <span className="text-sm font-bold text-gray-800">Reranker model</span>
-              <input
-                value={rerankerModel}
-                onChange={(e) => setRerankerModel(e.target.value)}
-                className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </label>
-
-            <div className="grid md:grid-cols-2 gap-4">
-              <label className="flex items-start gap-3 p-4 bg-gray-50 border border-gray-100 rounded-xl cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={allowModelDownload}
-                  onChange={(e) => setAllowModelDownload(e.target.checked)}
-                  className="mt-1"
-                />
-                <div>
-                  <p className="text-sm font-bold text-gray-800">Download model if missing</p>
-                  <p className="text-xs text-gray-500 mt-1">Disable this for cached-only reranker tests.</p>
+            {result?.error && !loading && (
+              <div role="alert" className={errorBox}>
+                <Icon name="error" className="text-[22px] shrink-0" />
+                <div className="min-w-0">
+                  <p className="m-0 font-bold">{result.message ?? t(streamErrorKey(result.code) ?? 'rerank.failed')}</p>
+                  <details className="mt-1 text-sm">
+                    <summary className="cursor-pointer">{t('action.details')}</summary>
+                    <p className="mt-1 break-words">{result.error}</p>
+                  </details>
                 </div>
-              </label>
-
-              <label className="block p-4 bg-gray-50 border border-gray-100 rounded-xl">
-                <span className="text-sm font-bold text-gray-800">Max documents</span>
-                <input
-                  value={maxDocuments}
-                  onChange={(e) => setMaxDocuments(e.target.value.replace(/[^\d]/g, ''))}
-                  placeholder="All ambiguous rows"
-                  className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
-            <div className="text-sm text-gray-600">
-              Embedding-confident rows stay assigned; only ambiguous rows are checked.
-            </div>
-            <button
-              onClick={handleRerank}
-              disabled={!vectorReady || loading}
-              className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-sky-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 disabled:opacity-50 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300"
-            >
-              Run Reranker
-            </button>
-          </div>
-        </div>
-      )}
-
-      {loading && (
-        <div className="p-8 bg-gray-900 rounded-3xl shadow-2xl relative overflow-hidden ring-1 ring-white/10">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gray-800">
-            <div className="h-full bg-gradient-to-r from-indigo-500 to-sky-500 transition-all duration-500 ease-out" style={{ width: `${progress}%` }}></div>
-          </div>
-          <div className="relative z-10 space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-white">Resolving Theme Assignments</h3>
-              <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-sky-300">{progress}%</span>
-            </div>
-            <div className="p-4 bg-black/40 rounded-xl border border-white/5">
-              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">System Status</p>
-              <p className="text-sky-300 font-mono text-sm">{currentStage}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {result && !loading && (
-        <div className={`p-6 rounded-2xl ${result.error ? 'bg-red-50 border border-red-100' : 'bg-emerald-50 border border-emerald-100'}`}>
-          <h4 className={`text-lg font-bold ${result.error ? 'text-red-900' : 'text-emerald-900'}`}>
-            {result.error ? 'Reranker Failed' : 'Final Theme Assignments Ready'}
-          </h4>
-          <p className={`mt-1 ${result.error ? 'text-red-700' : 'text-emerald-700'}`}>
-            {result.error || 'Ambiguous embedding candidates were resolved to one final theme per response.'}
-          </p>
-
-          {!result.error && (
-            <div className="mt-6 grid md:grid-cols-4 gap-4">
-              <div className="bg-white/60 p-4 rounded-xl">
-                <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">Reranked</p>
-                <p className="text-2xl font-black text-emerald-700 mt-1">{result.reranked_documents}</p>
               </div>
-              <div className="bg-white/60 p-4 rounded-xl">
-                <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">Changed</p>
-                <p className="text-2xl font-black text-emerald-700 mt-1">{result.changed_primary}</p>
+            )}
+
+            {loading && (
+              <>
+                <ProgressPanel stage={currentStage} progress={progress} logs={logs} download={download ?? undefined} />
+                <p className="m-0 text-sm text-on-surface-variant">{t('progress.browseNote')}</p>
+              </>
+            )}
+
+            {!loading && DONE_CARD_STATES.has(view.state) && (
+              <button
+                type="button"
+                onClick={() => { setResult(null); setRerunning(false); }}
+                className={`${secondaryButton} self-start`}
+              >
+                <Icon name="arrow_back" className="text-[18px]" />
+                {t('action.viewResults')}
+              </button>
+            )}
+
+            {!loading && (
+              <div className={noteBox}>
+                <Icon name="info" className="text-[20px] text-primary shrink-0" />
+                <p className="m-0">{t('rerank.hint')}</p>
               </div>
-              <div className="bg-white/60 p-4 rounded-xl">
-                <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">Low Info</p>
-                <p className="text-2xl font-black text-emerald-700 mt-1">{result.low_information_reassigned}</p>
+            )}
+
+            {skipError && (
+              <div role="alert" className="rounded-[12px] bg-error-container text-on-error-container px-4 py-3 text-sm">
+                <p className="m-0 font-semibold">{t('rerank.skipFailed')}</p>
+                <details className="mt-1">
+                  <summary className="cursor-pointer">{t('action.details')}</summary>
+                  <p className="mt-1 break-words">{skipError}</p>
+                </details>
               </div>
-              <div className="bg-white/60 p-4 rounded-xl">
-                <p className="text-emerald-600/70 text-xs font-bold uppercase tracking-wider">Model</p>
-                <p className="text-xs font-black text-emerald-700 mt-2 break-words">{result.reranker_model}</p>
+            )}
+          </div>
+
+          {!loading && (
+            <div className={stepFooter}>
+              {showSkip ? (
+                <button
+                  type="button"
+                  onClick={handleSkip}
+                  disabled={!view.canStart || skipping}
+                  className={linkButton}
+                >
+                  {t('action.skip')}
+                </button>
+              ) : <span />}
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <GateReason stepId="rerank" onNavigate={onNavigate} />
+                <button
+                  type="button"
+                  onClick={handleRerank}
+                  disabled={!view.canStart || loading}
+                  className={primaryButton}
+                >
+                  <Icon name="fact_check" className="text-[18px]" />
+                  {t('rerank.start')}
+                </button>
               </div>
             </div>
           )}
-        </div>
+
+          {!loading && (
+            <details className={advancedDetails}>
+              <summary className={advancedSummary}>
+                <Icon name="tune" className="text-[18px]" />
+                {t('action.advanced')}
+              </summary>
+              <div className={advancedBody}>
+                <label className="flex flex-col gap-1.5 max-w-md">
+                  <span className={fieldLabel}>{t('rerank.max.title')}</span>
+                  <input
+                    value={maxDocuments}
+                    inputMode="numeric"
+                    onChange={(e) => setMaxDocuments(e.target.value.replace(/[^\d]/g, ''))}
+                    placeholder={t('rerank.max.placeholder')}
+                    className={textInput}
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 max-w-md">
+                  <span className={fieldLabel}>{t('rerank.model')}</span>
+                  <input
+                    value={rerankerModel}
+                    onChange={(e) => setRerankerModel(e.target.value)}
+                    className={`${textInput} font-mono`}
+                  />
+                  {status?.theme_reranker_model && (
+                    <span className="text-xs text-on-surface-variant break-words">{status.theme_reranker_model}</span>
+                  )}
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allowModelDownload}
+                    onChange={(e) => setAllowModelDownload(e.target.checked)}
+                    className={checkbox}
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="font-semibold text-on-surface">{t('vec.download.title')}</span>
+                    <span className="text-on-surface-variant">{t('rerank.download.lead')}</span>
+                  </span>
+                </label>
+              </div>
+            </details>
+          )}
+        </>
       )}
-    </div>
+    </>
   );
 }

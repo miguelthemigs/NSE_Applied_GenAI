@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NSE Insights UI Review</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Literata:opsz,wght@7..72,500;7..72,600&display=swap">
+<style>
+/* Print layout: A4, one reading column, exhibits full width. Light only (paper). */
+:root{
+  --fg:#17212b; --muted:#5b6673; --line:#dde2e8; --paper:#ffffff; --tint:#f4f6f9;
+  --accent:#0f3d63; --accent-soft:#e6eef6;
+  --good:#1f7a4d; --good-bg:#e5f4ec; --warn:#9a6200; --warn-bg:#fdf3dd; --bad:#b3261e; --bad-bg:#fbe9e7;
+  --f-display:"Literata", Georgia, serif; --f-body:"Figtree", Helvetica, Arial, sans-serif;
+}
+@page{size:A4;margin:18mm 17mm 20mm}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;background:var(--paper);color:var(--fg);font:10.5pt/1.55 var(--f-body)}
+h1,h2,h3{font-family:var(--f-display);line-height:1.2;text-wrap:balance;break-after:avoid}
+h1{font-size:20pt;font-weight:600;margin:4pt 0 6pt}
+h2{font-size:15pt;font-weight:600;margin:16pt 0 6pt;padding-top:8pt;border-top:1px solid var(--line)}
+h3{font-size:12pt;font-weight:600;margin:14pt 0 4pt}
+p,li{margin:0 0 6pt}
+ul{padding-left:16pt;margin:4pt 0 8pt}
+.eyebrow{font-weight:600;color:var(--accent);font-size:10pt}
+.byline{color:var(--muted);font-size:9.5pt;margin-bottom:12pt}
+.lead{font-size:12.5pt;line-height:1.5}
+.top3{display:grid;grid-template-columns:repeat(3,1fr);gap:9pt;list-style:none;padding:0;margin:10pt 0;counter-reset:t}
+.top3 li{background:var(--tint);border-radius:6pt;padding:10pt 11pt;counter-increment:t;margin:0;font-size:9.8pt}
+.top3 li::before{content:counter(t);display:block;font:600 16pt/1 var(--f-display);color:var(--accent);margin-bottom:4pt}
+.top3 b{display:block;margin-bottom:3pt;font-size:10.5pt}
+table{border-collapse:collapse;width:100%;font-size:9.6pt;margin:8pt 0}
+th,td{text-align:left;vertical-align:top;padding:6pt 7pt;border-bottom:1px solid var(--line)}
+th{font-weight:600;color:var(--muted);background:var(--tint)}
+tr{break-inside:avoid}
+.grade{display:inline-block;min-width:22pt;text-align:center;font-weight:700;border-radius:4pt;padding:1pt 4pt}
+.g-good{background:var(--good-bg);color:var(--good)} .g-warn{background:var(--warn-bg);color:var(--warn)} .g-bad{background:var(--bad-bg);color:var(--bad)}
+figure{margin:8pt 0 10pt;break-inside:avoid}
+figure img{display:block;max-width:100%;border:1px solid var(--line);border-radius:5pt}
+figcaption{color:var(--muted);font-size:8.8pt;margin-top:3pt}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12pt;align-items:start}
+.section{break-inside:avoid}
+.mock{border:1px solid var(--line);border-radius:6pt;padding:9pt;display:grid;gap:6pt;break-inside:avoid}
+.opt{border:1px solid var(--line);border-radius:5pt;padding:6pt 8pt;display:flex;gap:7pt}
+.opt.sel{border-color:var(--accent);background:var(--accent-soft)}
+.dot{width:9pt;height:9pt;border-radius:50%;border:1.5pt solid var(--muted);flex:none;margin-top:3pt}
+.sel .dot{border-color:var(--accent);background:radial-gradient(var(--accent) 40%,transparent 48%)}
+.opt small,.mock small{display:block;color:var(--muted);font-size:8.8pt}
+.stepper{display:flex;flex-wrap:wrap;gap:4pt 14pt;font-size:9.8pt}
+.s-done{color:var(--good)} .s-now{color:var(--accent);font-weight:600} .s-todo{color:var(--muted)}
+.note{background:var(--accent-soft);padding:9pt 11pt;border-radius:6pt}
+.page-break{break-before:page}
+</style>
+</head>
+<body>
+<p class="eyebrow">NSE Insights · UI/UX review</p>
+<h1>The app works, but it talks like an engineer</h1>
+<p class="byline">30 September 2026 · Prepared by the NSE Applied GenAI project team</p>
+<p class="lead">Every step of the app does its job: it removes personal details, organises the answers, sorts them into themes and writes summaries. What holds it back is how it presents that work. It switches between Dutch and English, asks users to choose AI models by their technical names, and rarely says what it just finished. A handful of focused changes would make it easy to use for the people it is built for.</p>
+
+<h2>The three things that matter most</h2>
+<ol class="top3">
+<li><b>No mixed languages, plain words.</b>A single screen shows “Vorige run beschikbaar”, “Drop your CSV file here” and “Check uitvoeren” side by side. Terms like <i>Vector DB</i> and <i>reranker</i> mean nothing to most users.</li>
+<li><b>Always show what happened.</b>After a step finishes, the app only offers to run it again. Model downloads show no progress. After a restart, nothing tells you your earlier work is still there, even though it is.</li>
+<li><b>Fewer choices.</b>The summaries step offers 4 buttons, 5 filter options, a slider and 3 AI models. Most users need one button with good defaults, and an “Advanced” section for the rest.</li>
+</ol>
+
+<h2>How we reviewed it</h2>
+<p>We used the app as a first-time user would and wrote down every point of confusion. We then walked through each screen on a laptop, and checked it against established design guidelines for clarity, progress feedback and consistency.</p>
+<p>Each area is graded from 1 (gets in the user’s way) to 5 (excellent). A first working version typically scores between 2 and 3.</p>
+
+<h2>Scorecard</h2>
+<table>
+<thead><tr><th style="width:26%">Area</th><th style="width:9%">Grade</th><th>What we saw</th></tr></thead>
+<tbody>
+<tr><td>Results after removing personal details</td><td><span class="grade g-good">4</span></td><td>Clear and trustworthy: 288 names, 16 locations, 73 personal numbers and 32 health details removed, with 1 possible miss highlighted for review.</td></tr>
+<tr><td>Progress while working</td><td><span class="grade g-warn">2.5</span></td><td>One step has a good four-stage progress bar. Elsewhere, a finished step still shows “0%”, and model downloads are invisible.</td></tr>
+<tr><td>Remembering work after a restart</td><td><span class="grade g-warn">2.5</span></td><td>The data is saved, but the screens don’t show it. Steps have no “done” marks, and the Overview shows 0 comments with “error” as the top theme.</td></tr>
+<tr><td>Guidance through the steps</td><td><span class="grade g-bad">2</span></td><td>All five steps can be opened in any order. Nothing says which step comes next or why.</td></tr>
+<tr><td>Visual consistency</td><td><span class="grade g-bad">2</span></td><td>Each step has its own colours, dark panels appear inside light pages, and emoji sit next to proper icons.</td></tr>
+<tr><td>Language and wording</td><td><span class="grade g-bad">1.5</span></td><td>Dutch and English on the same card. Technical model names and system codes are shown as they are.</td></tr>
+</tbody></table>
+
+<h2>What we found, screen by screen</h2>
+
+<h3>Across the whole app</h3>
+<p><b>Step names describe the technology, not the job.</b> We propose renaming them:</p>
+<table>
+<thead><tr><th>Now</th><th>Proposed</th></tr></thead>
+<tbody>
+<tr><td>1. Anonymize Data</td><td>Remove personal details</td></tr>
+<tr><td>2. Build Vector DB</td><td>Prepare answers for search</td></tr>
+<tr><td>3. Rerank Themes</td><td>Double-check themes</td></tr>
+<tr><td>4. Generate Insights</td><td>Write summaries</td></tr>
+<tr><td>5. AI Query</td><td>Ask a question</td></tr>
+</tbody></table>
+<p><b>No sense of where you are.</b> The step menu looks the same whether a step is done or not. We propose a progress line that marks finished steps and highlights the next one, and that stays up to date after a restart:</p>
+<div class="mock">
+<div class="stepper"><span class="s-done">✓ Remove personal details</span><span class="s-done">✓ Prepare for search</span><span class="s-now">● Double-check themes</span><span class="s-todo">○ Write summaries</span><span class="s-todo">○ Ask a question</span></div>
+</div>
+
+<div class="section">
+<h3>Choosing an AI model</h3>
+<div class="two">
+<div>
+<p>Users are asked to choose between models such as “Octen Embedding 0.6B / 4B / 8B” and “Gemma 4 12B QAT”. Most users can’t make that choice. We should choose a sensible default and describe the trade-off in everyday terms.</p>
+<p>When a model isn’t on the computer yet, the app downloads it without telling the user. It should show a message such as “Downloading the Balanced model, 1.2 of 5 GB”, with a progress bar.</p>
+</div>
+<div class="mock">
+<div class="opt"><span class="dot"></span><div><b>Quick</b><small>Good for a first look. Smallest download.</small></div></div>
+<div class="opt sel"><span class="dot"></span><div><b>Balanced (recommended)</b><small>Best mix of speed and quality.</small></div></div>
+<div class="opt"><span class="dot"></span><div><b>Most thorough</b><small>Best quality for the final report. Slowest.</small></div></div>
+<small>Proposed: technical names move to an “Advanced” section.</small>
+</div>
+</div>
+</div>
+
+<h3>Remove personal details</h3>
+<div class="two">
+<figure><img src="img/anonymize.jpg" alt="Start screen mixing Dutch and English"><figcaption>One box, two languages: “Vorige run beschikbaar”, “Drop your CSV file here”, “Check uitvoeren”.</figcaption></figure>
+<figure><img src="img/anon_results.jpg" alt="Results screen"><figcaption>The results list works well. The dark “0%” panel above it is left over from the run and contradicts it.</figcaption></figure>
+</div>
+<ul>
+<li><b>Works well:</b> results are grouped by type, and the one possible miss is easy to spot.</li>
+<li><b>The three sub-steps look like separate apps.</b> Show them as parts of one step: Upload → Choose columns → Check results.</li>
+<li><b>After finishing,</b> replace the 0% panel with a short summary: “Done. 300 answers checked, 409 personal details removed, 1 to review.”</li>
+</ul>
+
+<div class="section">
+<h3>Prepare answers for search</h3>
+<div class="two">
+<figure><img src="img/vec_running.jpg" alt="Progress panel with technical log text"><figcaption>The four-stage progress bar is the best in the app. The log text above it is meant for developers.</figcaption></figure>
+<ul>
+<li>Keep this progress bar and use the same one in every step.</li>
+<li>Hide the developer log behind a “Show details” link.</li>
+<li>Use the same light style as the rest of the app instead of a dark panel.</li>
+</ul>
+</div>
+</div>
+
+<div class="section">
+<h3>Double-check themes</h3>
+<p>This step is called “Theme Reranker” and shows a raw model code and a status of <i>not_run</i>. A non-technical user has no way to know what it does. We propose this explanation on screen:</p>
+<p class="note">“Some answers could fit more than one theme. In this step, a second, more careful AI reads those answers again and picks the best theme. Answers that were already clear are left alone.”</p>
+<p>The screen should also show how many answers this affects, and use plain statuses: “Not done yet”, “Done”, “Switched off”.</p>
+</div>
+
+<div class="section">
+<h3>Write summaries</h3>
+<div class="two">
+<figure><img src="img/insights.jpg" alt="Summaries screen with many options"><figcaption>Three model choices, several options, a slider and four differently coloured buttons.</figcaption></figure>
+<ul>
+<li><b>Too many choices.</b> Replace the four buttons with one: “Write summaries”, plus one option: “Also write summaries per year, location and programme (takes longer)”.</li>
+<li><b>Hard to find results again.</b> After running one option, the others disappear from view. Show all results in one list with a status: done, in progress or not started.</li>
+<li>Move the remaining settings to an “Advanced” section.</li>
+</ul>
+</div>
+</div>
+
+<div class="section">
+<h3>Overview dashboard</h3>
+<figure><img src="img/overview.jpg" alt="Overview showing error as the top theme"><figcaption>After a restart: 0 comments, 2 themes instead of 7, and “error” shown as the top theme.</figcaption></figure>
+<ul>
+<li>Never show “error” as if it were a result. If summaries haven’t been written yet, say so and link to the step that creates them.</li>
+<li>Show when the data was last updated, so users can see their work was kept.</li>
+</ul>
+</div>
+
+<h2>What we propose to do, in order</h2>
+<table>
+<thead><tr><th style="width:11%">When</th><th>Change</th><th style="width:30%">Solves</th><th style="width:11%">Effort</th></tr></thead>
+<tbody>
+<tr><td>Now</td><td>Add a Dutch / English switch and translate every label, button and status</td><td>Mixed Dutch and English on one screen, system codes</td><td>Small</td></tr>
+<tr><td>Now</td><td>Plain step names, with a one-line explanation per step</td><td>Technical wording, “what is a reranker?”</td><td>Small</td></tr>
+<tr><td>Now</td><td>A “Done” summary after each step and marks on finished steps</td><td>No feedback, unclear state after a restart</td><td>Small</td></tr>
+<tr><td>Next</td><td>Quick / Balanced / Most thorough model choice</td><td>Technical model selection</td><td>Medium</td></tr>
+<tr><td>Next</td><td>Visible progress for model downloads</td><td>Silent downloads</td><td>Medium</td></tr>
+<tr><td>Next</td><td>One “Write summaries” button with a results list</td><td>Too many options</td><td>Medium</td></tr>
+<tr><td>Later</td><td>One light visual style, icon set and accent colour</td><td>Inconsistent look</td><td>Medium</td></tr>
+</tbody></table>
+
+<div class="section">
+<h2>Decision we need from you</h2>
+<p><b>Advanced settings:</b> does anyone need the model and processing settings, or can we hide them completely?</p>
+<p>Once these are decided, we can start with the “Now” changes straight away.</p>
+</div>
+</body>
+</html>

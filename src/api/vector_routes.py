@@ -2,9 +2,11 @@ from importlib import import_module
 
 from flask import Blueprint, Response, jsonify, request
 
+from src.api.guards import anonymize_gate, busy_response
+from src.pipeline import jobs
+
 vector_bp = Blueprint("vector", __name__)
 embedding = import_module("src.pipeline.02_embedding.service")
-generation = import_module("src.pipeline.04_generation.service")
 retrieval = import_module("src.pipeline.03_retrieval.service")
 
 
@@ -15,6 +17,9 @@ def status():
 
 @vector_bp.route("/api/build-vectors", methods=["POST"])
 def build_vectors():
+    blocked = anonymize_gate("BUILD-VECTORS")
+    if blocked is not None:
+        return blocked
     try:
         data = request.get_json(silent=True) or {}
         stream = embedding.build_vectors_stream(
@@ -22,8 +27,9 @@ def build_vectors():
             selected_columns=data.get("selected_columns"),
             allow_model_download=bool(data.get("allow_model_download", True)),
         )
-        generation.clear_insight_cache()
         return Response(stream, mimetype="application/x-ndjson")
+    except jobs.JobBusy as exc:
+        return busy_response(exc)
     except FileNotFoundError as exc:
         return jsonify({"status": "error", "error": str(exc)}), 400
     except Exception as exc:
@@ -33,6 +39,9 @@ def build_vectors():
 
 @vector_bp.route("/api/rerank-theme-assignments", methods=["POST"])
 def rerank_theme_assignments():
+    blocked = anonymize_gate("RERANK-THEMES")
+    if blocked is not None:
+        return blocked
     try:
         data = request.get_json(silent=True) or {}
         max_documents = data.get("max_documents")
@@ -45,8 +54,9 @@ def rerank_theme_assignments():
                 else None
             ),
         )
-        generation.clear_insight_cache()
         return Response(stream, mimetype="application/x-ndjson")
+    except jobs.JobBusy as exc:
+        return busy_response(exc)
     except Exception as exc:
         print(f"[RERANK-THEMES ERROR] {str(exc)}")
         return jsonify({"status": "error", "error": str(exc)}), 500
@@ -71,6 +81,9 @@ def get_filter_options():
 
 @vector_bp.route("/api/query-vectors", methods=["GET"])
 def query_vectors():
+    blocked = anonymize_gate("QUERY")
+    if blocked is not None:
+        return blocked
     try:
         query_text = request.args.get("query", "").strip()
         top_k = min(int(request.args.get("n", 10)), 50)

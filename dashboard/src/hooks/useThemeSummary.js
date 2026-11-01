@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { filtersToApiParams } from '../utils/filters'
+import { apiUrl } from '../services/api'
 
 export function useThemeSummary(theme, filters = {}) {
   const [liveData, setLiveData] = useState(null)
@@ -31,7 +32,7 @@ export function useThemeSummary(theme, filters = {}) {
       }
       try {
         const apiFilters = filtersToApiParams(filters)
-        const res = await fetch('http://localhost:5001/api/theme-summary', {
+        const res = await fetch(apiUrl('/api/theme-summary'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -47,7 +48,8 @@ export function useThemeSummary(theme, filters = {}) {
         if (data.status === 'success') {
           setLiveData(data)
         } else {
-          setLiveData({ error: data.error || 'Failed to generate summary' })
+          // `code` lets the UI translate the reason (error.model_missing); `error` is the raw text for Details.
+          setLiveData({ error: data.error || 'Failed to generate summary', code: data.code ?? null })
         }
       } catch (e) {
         if (isMounted) setLiveData({ error: 'Failed to connect to backend server.' })

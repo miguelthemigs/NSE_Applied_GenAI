@@ -10,6 +10,7 @@ from typing import Protocol
 import requests
 
 from src.config.paths import ROOT_DIR
+from src.pipeline import model_downloads
 from src.config.settings import (
     DEFAULT_LLM_PROVIDER,
     LLAMA_CPP_API_KEY,
@@ -22,6 +23,16 @@ from .llama_cpp_models import resolve_llama_cpp_model
 
 class LocalModelConnectionError(RuntimeError):
     pass
+
+
+def llama_server_env() -> dict[str, str]:
+    """The launch env: the same HF cache that snapshot_download writes to.
+
+    llama-server reads both HF_HUB_CACHE and LLAMA_CACHE (Task 12 spike), so
+    both point at one directory; never set it for only one of the two.
+    """
+    cache = model_downloads.hub_cache_dir()
+    return {**os.environ, "HF_HUB_CACHE": cache, "LLAMA_CACHE": cache}
 
 
 class LLMClient(Protocol):
@@ -120,6 +131,12 @@ class LlamaCppClient:
             return
 
         self._check_llama_server_binary(model_name)
+        # The server runs with --offline and only POST /api/llm-models/start-stream
+        # downloads (visibly). Here the files must already be local: a fast, clear
+        # ModelNotDownloadedError (error.model_missing) instead of a silent download.
+        # The startup timeout below therefore only covers loading.
+        model = resolve_llama_cpp_model(model_name)
+        model_downloads.require_local(model.repo_id, model.download_patterns)
         self._managed_log_path.parent.mkdir(parents=True, exist_ok=True)
         command = self._server_command(model_name)
         with self._managed_log_path.open("ab") as log_file:
@@ -131,12 +148,17 @@ class LlamaCppClient:
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
+                env=llama_server_env(),
             )
         self.__class__._managed_process = process
         self._managed_pid_path.write_text(str(process.pid), encoding="ascii")
         self._wait_until_server_ready(model_name)
 
     def _restart_llama_server(self, model_name: str) -> None:
+        # Check the new model's files BEFORE stopping a healthy server: an uncached
+        # model must fail fast without killing the one that is running.
+        model = resolve_llama_cpp_model(model_name)
+        model_downloads.require_local(model.repo_id, model.download_patterns)
         self.__class__._stop_managed_server()
         try:
             response = requests.get(f"{self.base_url}/v1/models", timeout=2)
@@ -168,6 +190,25 @@ class LlamaCppClient:
                 f"llama.cpp model check failed with status {response.status_code}: {response.text}"
             )
         return response.json().get("data", [])
+
+    @classmethod
+    def running_managed_model_id(cls) -> str | None:
+        """Id of the model the running managed llama-server serves, else None."""
+        if not cls._has_managed_server():
+            return None
+        try:
+            response = requests.get(f"{cls.base_url}/v1/models", timeout=2)
+            if response.status_code != 200:
+                return None
+            ids = sorted(cls._model_ids(response.json()))
+        except Exception:
+            return None
+        for model_id in ids:
+            try:
+                return resolve_llama_cpp_model(model_id).id
+            except ValueError:
+                continue
+        return None
 
     @classmethod
     def _has_managed_server(cls) -> bool:

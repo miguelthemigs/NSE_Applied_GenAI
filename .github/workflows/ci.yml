@@ -25,6 +25,9 @@ jobs:
       - name: Import check
         run: python -c "import app"
 
+      - name: Unit tests
+        run: python -m unittest discover tests
+
   frontend:
     name: Frontend build
     runs-on: ubuntu-latest
@@ -37,12 +40,37 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Copy check
+        run: npm run check:copy
+
+      - name: Test
+        run: npm test
+
       - name: Build
         run: npm run build
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: npm run e2e
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            dashboard/playwright-report
+            dashboard/test-results
+          if-no-files-found: ignore

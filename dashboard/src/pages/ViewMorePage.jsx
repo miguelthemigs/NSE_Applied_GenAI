@@ -11,8 +11,11 @@ import { useThemeSummary } from "../hooks/useThemeSummary";
 import FilterDropdown from "../components/FilterDropdown";
 import { LOCATION_OPTIONS } from "../constants/locations";
 import { getThemeColor } from "../constants/themeColors";
-import { buildRealTheme, REAL_THEME_META, THEME_NAME_BY_ID } from "../constants/realThemes";
+import { buildRealTheme, REAL_THEME_META, THEME_NAME_BY_ID, themeLabel, themeText } from "../constants/realThemes";
+import { useI18n } from "../i18n/I18nProvider";
 import { motion } from "framer-motion";
+import { apiUrl } from "../services/api";
+import { llmErrorKey } from "../utils/downloadProgress";
 import {
   filtersFromSearchParams,
   filtersToApiParams,
@@ -21,6 +24,7 @@ import {
   normalizeFilters,
   searchFromFilters,
 } from "../utils/filters";
+import Icon from '../components/Icon.jsx'
 
 function normaliseComment(comment) {
   return String(comment || "").replace(/^"+|"+$/g, "");
@@ -211,6 +215,7 @@ function buildSubthemeRows(subthemes, apiRows, sourceComments) {
 
 // ── Comment card with expand/collapse ────────────────────────────────────────
 function CommentCard({ comment, accentColor, index = 0 }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const text = normaliseComment(comment);
   const isLong = text.length > 180;
@@ -249,10 +254,8 @@ function CommentCard({ comment, accentColor, index = 0 }) {
           className="mt-3 flex items-center gap-1 text-[11px] font-bold hover:opacity-80 transition-colors self-end uppercase tracking-wider"
           style={{ color: accentColor }}
         >
-          {expanded ? "Show Less" : "Show More"}
-          <span className="material-symbols-outlined text-xs">
-            {expanded ? "keyboard_arrow_up" : "keyboard_arrow_down"}
-          </span>
+          {expanded ? t("detail.showLess") : t("detail.showMore")}
+          <Icon name={expanded ? "keyboard_arrow_up" : "keyboard_arrow_down"} className="text-xs" />
         </button>
       )}
     </motion.div>
@@ -261,6 +264,7 @@ function CommentCard({ comment, accentColor, index = 0 }) {
 
 // ── Suggestion section ──────────────────────────────────────────────────────
 function SuggestionCard({ suggestion, accentColor, index = 0 }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const text = normaliseComment(suggestion);
   const isLong = text.length > 150;
@@ -289,7 +293,7 @@ function SuggestionCard({ suggestion, accentColor, index = 0 }) {
           className="mt-2 self-end text-[11px] font-bold not-italic uppercase tracking-wider hover:opacity-80 transition-colors bg-transparent border-none p-0 cursor-pointer"
           style={{ color: accentColor }}
         >
-          {expanded ? "Show less" : "Show more"}
+          {expanded ? t("detail.showLess") : t("detail.showMore")}
         </button>
       )}
     </motion.blockquote>
@@ -297,6 +301,7 @@ function SuggestionCard({ suggestion, accentColor, index = 0 }) {
 }
 
 function SuggestionSection({ suggestions, accentColor }) {
+  const { t } = useI18n();
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -307,23 +312,17 @@ function SuggestionSection({ suggestions, accentColor }) {
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-4">
         <div>
           <div className="flex items-center gap-2">
-            <span
-              className="material-symbols-outlined text-xl"
-              style={{ color: accentColor, fontVariationSettings: "'FILL' 1" }}
-            >
-              lightbulb
-            </span>
+            <Icon name="lightbulb" filled className="text-xl" style={{ color: accentColor }} />
             <h2 className="text-base md:text-lg font-bold font-headline text-on-surface">
-              Student Suggestions
+              {t("detail.suggestions.title")}
             </h2>
           </div>
           <p className="text-xs text-on-surface-variant/65 mt-1">
-            These are real student answers that contain concrete suggestions for
-            improvement.
+            {t("detail.suggestions.lead")}
           </p>
         </div>
         <span className="text-[10px] uppercase tracking-wider font-bold text-on-surface-variant">
-          Solution-oriented
+          {t("detail.suggestions.tag")}
         </span>
       </div>
 
@@ -340,8 +339,7 @@ function SuggestionSection({ suggestions, accentColor }) {
         </div>
       ) : (
         <p className="text-sm text-on-surface-variant bg-surface p-4 rounded-xl">
-          No clear solution-oriented student suggestions were returned for this
-          theme yet.
+          {t("detail.suggestions.empty")}
         </p>
       )}
     </motion.div>
@@ -357,6 +355,7 @@ function FeedbackSummaryBlock({
   color,
   emptyText,
 }) {
+  const { t } = useI18n();
   const [expandedIndex, setExpandedIndex] = useState(null);
   const cards = useMemo(
     () => buildPointCards((points || []).slice(0, 3), comments),
@@ -370,12 +369,7 @@ function FeedbackSummaryBlock({
     >
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-start gap-2.5">
-          <span
-            className="material-symbols-outlined mt-0.5"
-            style={{ color, fontVariationSettings: "'FILL' 1" }}
-          >
-            {icon}
-          </span>
+          <Icon name={icon} filled className="mt-0.5" style={{ color }} />
           <div>
             <p
               className="text-[10px] font-bold uppercase tracking-wider"
@@ -392,7 +386,7 @@ function FeedbackSummaryBlock({
           className="shrink-0 text-[10px] font-bold uppercase tracking-wider rounded-full px-2.5 py-1"
           style={{ color, backgroundColor: `${color}12` }}
         >
-          Top {cards.length || 3}
+          {t("detail.top", { n: cards.length || 3 })}
         </span>
       </div>
 
@@ -418,7 +412,7 @@ function FeedbackSummaryBlock({
                     className="text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5"
                     style={{ color, backgroundColor: `${color}10` }}
                   >
-                    AI summary {index + 1}
+                    {t("detail.aiSummary", { n: index + 1 })}
                   </span>
                 </div>
                 <p className="text-sm leading-relaxed text-on-surface">
@@ -432,15 +426,11 @@ function FeedbackSummaryBlock({
                   className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold border-none bg-transparent cursor-pointer disabled:cursor-default disabled:opacity-50 p-0"
                   style={{ color }}
                 >
-                  <span className="material-symbols-outlined text-base">
-                    forum
-                  </span>
+                  <Icon name="forum" className="text-base" />
                   {card.relatedComments.length > 0
-                    ? `${expanded ? "Hide" : "Read"} ${card.relatedComments.length} real comments`
-                    : "No matching comments found"}
-                  <span className="material-symbols-outlined text-base">
-                    {expanded ? "expand_less" : "expand_more"}
-                  </span>
+                    ? t(expanded ? "detail.comments.hide" : "detail.comments.read", { n: card.relatedComments.length })
+                    : t("detail.comments.none")}
+                  <Icon name={expanded ? "expand_less" : "expand_more"} className="text-base" />
                 </button>
 
                 {expanded && card.relatedComments.length > 0 && (
@@ -480,6 +470,7 @@ function AIFeedbackBento({
   accentColor,
   loading,
 }) {
+  const { t } = useI18n();
   if (loading) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -501,41 +492,35 @@ function AIFeedbackBento({
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-5">
         <div>
           <div className="flex items-center gap-2">
-            <span
-              className="material-symbols-outlined"
-              style={{ color: accentColor, fontVariationSettings: "'FILL' 1" }}
-            >
-              auto_awesome
-            </span>
+            <Icon name="auto_awesome" filled style={{ color: accentColor }} />
             <h2 className="text-base md:text-lg font-bold font-headline text-on-surface">
-              AI-generated comment summary
+              {t("detail.bento.title")}
             </h2>
           </div>
           <p className="text-xs text-on-surface-variant/65 mt-1">
-            Summaries are generated from real survey comments. Expand each
-            summary to read the source comments.
+            {t("detail.bento.lead")}
           </p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
         <FeedbackSummaryBlock
-          title="Top 3 Positive Signals"
-          eyebrow="First metric"
+          title={t("detail.positive.title")}
+          eyebrow={t("detail.positive.eyebrow")}
           points={positivePoints}
           comments={comments}
           icon="thumb_up"
           color="#005119"
-          emptyText="No AI-generated positive summaries are available for this theme yet."
+          emptyText={t("detail.positive.empty")}
         />
         <FeedbackSummaryBlock
-          title="Top 3 Negative Signals"
-          eyebrow="Second metric"
+          title={t("detail.negative.title")}
+          eyebrow={t("detail.negative.eyebrow")}
           points={negativePoints}
           comments={comments}
           icon="report"
           color="#BA1A1A"
-          emptyText="No AI-generated negative summaries are available for this theme yet."
+          emptyText={t("detail.negative.empty")}
         />
       </div>
     </motion.section>
@@ -544,6 +529,7 @@ function AIFeedbackBento({
 
 // ── Donut chart — uses shades of one accent color ───────────────────────────
 function DonutChart({ rows, title, accentColor }) {
+  const { t } = useI18n();
   if (!rows || rows.length === 0) return null;
 
   const radius = 50;
@@ -603,7 +589,7 @@ function DonutChart({ rows, title, accentColor }) {
       className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/10 shadow-sm flex flex-col items-center gap-4"
     >
       <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant w-full text-left">
-        {title || "Breakdown"}
+        {title || t("detail.breakdown")}
       </h3>
       <div className="relative w-[140px] h-[140px] flex items-center justify-center">
         <svg
@@ -611,7 +597,7 @@ function DonutChart({ rows, title, accentColor }) {
           height="140"
           viewBox="0 0 140 140"
           role="img"
-          aria-label={title || "Breakdown"}
+          aria-label={title || t("detail.breakdown")}
         >
           <circle
             cx="70"
@@ -652,7 +638,7 @@ function DonutChart({ rows, title, accentColor }) {
         </svg>
         <div className="absolute flex flex-col items-center justify-center">
           <span className="text-[9px] uppercase font-bold text-on-surface-variant/50">
-            Total
+            {t("detail.total")}
           </span>
           <span
             className="text-lg font-extrabold font-headline"
@@ -661,7 +647,7 @@ function DonutChart({ rows, title, accentColor }) {
             {quoteTotal}
           </span>
           <span className="text-[9px] text-on-surface-variant/70">
-            comments
+            {t("common.comments")}
           </span>
         </div>
       </div>
@@ -700,6 +686,7 @@ function SubthemesList({
   accentColor,
   gradient,
 }) {
+  const { t } = useI18n();
   const sortedRows = [...rows].sort((a, b) => b.percentage - a.percentage);
   const hasRows = sortedRows.length > 0;
 
@@ -712,11 +699,9 @@ function SubthemesList({
     >
       <div className="flex items-center justify-between gap-3 mb-4">
         <h2 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
-          Key Sub-themes Detected
+          {t("detail.subthemes.title")}
         </h2>
-        <span className="material-symbols-outlined text-outline text-xl">
-          layers
-        </span>
+        <Icon name="layers" className="text-outline text-xl" />
       </div>
 
       {hasRows ? (
@@ -787,12 +772,10 @@ function SubthemesList({
                       : "text-on-surface-variant/85 font-medium"
                   }`}
                 >
-                  <span>{row.quote_count ?? row.mentions} comments</span>
+                  <span>{t("overview.card.comments", { n: row.quote_count ?? row.mentions })}</span>
                   <span className="flex items-center gap-0.5 uppercase tracking-wider font-semibold">
-                    Break down{" "}
-                    <span className="material-symbols-outlined text-[10px]">
-                      chevron_right
-                    </span>
+                    {t("detail.breakdown.action")}{" "}
+                    <Icon name="chevron_right" className="text-[10px]" />
                   </span>
                 </div>
               </motion.button>
@@ -801,7 +784,7 @@ function SubthemesList({
         </div>
       ) : (
         <p className="text-sm text-on-surface-variant">
-          No subthemes returned yet.
+          {t("detail.subthemes.empty")}
         </p>
       )}
     </motion.div>
@@ -810,15 +793,16 @@ function SubthemesList({
 
 // ── Quick stats row ─────────────────────────────────────────────────────────
 function QuickStats({ activeData, accentColor }) {
+  const { t } = useI18n();
   const totalComments = activeData.quotes?.length ?? 0;
   const subthemeCount =
     activeData.subtheme_mentions?.length || activeData.subthemes?.length || 0;
   const suggestionCount = activeData.student_suggestions?.length || 0;
 
   const stats = [
-    { icon: "forum", value: totalComments, label: "Comments" },
-    { icon: "layers", value: subthemeCount, label: "Sub-themes" },
-    { icon: "lightbulb", value: suggestionCount, label: "Suggestions" },
+    { icon: "forum", value: totalComments, label: t("overview.stat.comments") },
+    { icon: "layers", value: subthemeCount, label: t("overview.stat.subthemes") },
+    { icon: "lightbulb", value: suggestionCount, label: t("detail.stat.suggestions") },
   ];
 
   return (
@@ -835,12 +819,7 @@ function QuickStats({ activeData, accentColor }) {
           }}
           className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/10 shadow-sm flex flex-col items-center gap-1"
         >
-          <span
-            className="material-symbols-outlined text-lg"
-            style={{ color: accentColor, fontVariationSettings: "'FILL' 1" }}
-          >
-            {stat.icon}
-          </span>
+          <Icon name={stat.icon} filled className="text-lg" style={{ color: accentColor }} />
           <span className="text-xl font-extrabold font-headline text-on-surface tabular-nums">
             {stat.value}
           </span>
@@ -857,6 +836,7 @@ function QuickStats({ activeData, accentColor }) {
 // MAIN PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ViewMorePage() {
+  const { t } = useI18n();
   const { id, subthemeName } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -882,7 +862,7 @@ export default function ViewMorePage() {
   });
 
   useEffect(() => {
-    fetch("http://localhost:5001/api/filter-options")
+    fetch(apiUrl("/api/filter-options"))
       .then((r) => r.json())
       .then((data) => {
         if (data.status === "success") setFilterOptions(data.options);
@@ -898,7 +878,7 @@ export default function ViewMorePage() {
       return;
     }
     const params = new URLSearchParams(apiFilters);
-    fetch(`http://localhost:5001/api/filter-options?${params}`)
+    fetch(apiUrl(`/api/filter-options?${params}`))
       .then((r) => r.json())
       .then((data) => { if (data.status === "success") setAvailableFilterOptions(data.options); })
       .catch(() => {});
@@ -945,7 +925,7 @@ export default function ViewMorePage() {
     setLoadingSubtheme(true);
     setSubthemeLiveData(null);
     const apiFilters = filtersToApiParams(filters);
-    fetch("http://localhost:5001/api/theme-summary", {
+    fetch(apiUrl("/api/theme-summary"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1063,7 +1043,7 @@ export default function ViewMorePage() {
   if (loadingTheme) {
     return (
       <main className="max-w-[1280px] mx-auto px-4 py-6 md:px-8 md:py-10">
-        <p className="text-on-surface-variant">Loading real theme data...</p>
+        <p className="text-on-surface-variant">{t("overview.loading")}</p>
       </main>
     );
   }
@@ -1072,13 +1052,13 @@ export default function ViewMorePage() {
     return (
       <main className="max-w-[1280px] mx-auto px-4 py-6 md:px-8 md:py-10">
         <p className="text-on-surface-variant">
-          Theme not available from real data.
+          {t("detail.notFound")}
         </p>
         <NavLink
           to="/"
           className="text-sm text-primary font-semibold mt-4 inline-block"
         >
-          Back to overview
+          {t("detail.backOverview")}
         </NavLink>
       </main>
     );
@@ -1098,12 +1078,10 @@ export default function ViewMorePage() {
             to={{ pathname: "/", search: filterSearch }}
             className="hover:text-on-surface transition-colors flex items-center gap-1 no-underline text-on-surface-variant/70"
           >
-            <span className="material-symbols-outlined text-base">home</span>
-            Overview
+            <Icon name="home" className="text-base" />
+            {t("nav.overview")}
           </Link>
-          <span className="material-symbols-outlined text-xs text-outline select-none">
-            chevron_right
-          </span>
+          <Icon name="chevron_right" className="text-xs text-outline select-none" />
           {decodedSubtheme ? (
             <>
               <button
@@ -1115,18 +1093,16 @@ export default function ViewMorePage() {
                 }
                 className="hover:text-on-surface transition-colors focus:outline-none bg-transparent border-none p-0 cursor-pointer font-semibold text-on-surface-variant/70"
               >
-                {theme.name}
+                {themeLabel(t, theme.name)}
               </button>
-              <span className="material-symbols-outlined text-xs text-outline select-none">
-                chevron_right
-              </span>
+              <Icon name="chevron_right" className="text-xs text-outline select-none" />
               <span className="font-bold" style={{ color: colors.accent }}>
                 {decodedSubtheme}
               </span>
             </>
           ) : (
             <span className="font-bold" style={{ color: colors.accent }}>
-              {theme.name}
+              {themeLabel(t, theme.name)}
             </span>
           )}
         </motion.div>
@@ -1142,7 +1118,7 @@ export default function ViewMorePage() {
             <div className="flex-1 min-w-[130px]">
               <FilterDropdown
                 icon="calendar_today"
-                label="Academic Year"
+                label={t("overview.f.year")}
                 value={filters.jaar}
                 options={["All", ...filterOptions.academic_years]}
                 availableOptions={availableFilterOptions ? ["All", ...availableFilterOptions.academic_years] : null}
@@ -1152,7 +1128,7 @@ export default function ViewMorePage() {
             <div className="flex-1 min-w-[130px]">
               <FilterDropdown
                 icon="location_on"
-                label="Location"
+                label={t("overview.f.location")}
                 value={filters.locatie}
                 options={LOCATION_OPTIONS}
                 availableOptions={availableFilterOptions ? ["All", ...availableFilterOptions.locations] : null}
@@ -1162,7 +1138,7 @@ export default function ViewMorePage() {
             <div className="flex-1 min-w-[130px]">
               <FilterDropdown
                 icon="school"
-                label="Programme"
+                label={t("overview.f.programme")}
                 value={filters.opleiding}
                 options={["All", ...filterOptions.programmes]}
                 availableOptions={availableFilterOptions ? ["All", ...availableFilterOptions.programmes] : null}
@@ -1172,7 +1148,7 @@ export default function ViewMorePage() {
             <div className="flex-1 min-w-[130px]">
               <FilterDropdown
                 icon="history_edu"
-                label="Study Mode"
+                label={t("overview.f.studyMode")}
                 value={filters.studievorm}
                 options={["All", ...filterOptions.study_modes]}
                 availableOptions={availableFilterOptions ? ["All", ...availableFilterOptions.study_modes] : null}
@@ -1182,7 +1158,7 @@ export default function ViewMorePage() {
             <div className="flex-1 min-w-[130px]">
               <FilterDropdown
                 icon="translate"
-                label="Language"
+                label={t("overview.f.language")}
                 value={filters.taal}
                 options={["All", ...filterOptions.languages]}
                 availableOptions={availableFilterOptions ? ["All", ...availableFilterOptions.languages] : null}
@@ -1195,10 +1171,8 @@ export default function ViewMorePage() {
               onClick={clearFilters}
               className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors border-none bg-transparent cursor-pointer"
             >
-              <span className="material-symbols-outlined text-sm">
-                filter_alt_off
-              </span>
-              Clear all filters
+              <Icon name="filter_alt_off" className="text-sm" />
+              {t("overview.clearFilters")}
             </button>
           )}
         </motion.div>
@@ -1232,27 +1206,22 @@ export default function ViewMorePage() {
           <div className="relative z-10 p-5 md:p-8">
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
               <div className="flex items-start gap-4">
-                <span
-                  className="material-symbols-outlined text-4xl md:text-5xl shrink-0 text-white/90"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
-                >
-                  {theme.icon}
-                </span>
+                <Icon name={theme.icon} filled className="text-4xl md:text-5xl shrink-0 text-white/90" />
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-white/60 mb-1">
                     {activeData.isSubtheme
-                      ? `Sub-theme of ${theme.name}`
-                      : "Theme detail"}
+                      ? t("detail.subthemeOf", { theme: themeLabel(t, theme.name) })
+                      : t("detail.themeDetail")}
                   </p>
                   <h1 className="text-2xl md:text-4xl font-bold font-headline leading-tight">
-                    {activeData.name}
+                    {activeData.isSubtheme ? activeData.name : themeLabel(t, activeData.name)}
                   </h1>
-                  {!activeData.isSubtheme && theme.subtag && (
-                    <p className="text-sm text-white/70 mt-2">{theme.subtag}</p>
+                  {!activeData.isSubtheme && themeText(t, theme.name, "subtag", theme.subtag) && (
+                    <p className="text-sm text-white/70 mt-2">{themeText(t, theme.name, "subtag", theme.subtag)}</p>
                   )}
-                  {!activeData.isSubtheme && theme.description && (
+                  {!activeData.isSubtheme && themeText(t, theme.name, "desc", theme.description) && (
                     <p className="text-sm text-white/70 mt-1">
-                      {theme.description}
+                      {themeText(t, theme.name, "desc", theme.description)}
                     </p>
                   )}
                 </div>
@@ -1261,13 +1230,27 @@ export default function ViewMorePage() {
                 {(loadingLive || loadingSubtheme) && (
                   <span className="flex items-center gap-1.5 text-xs font-semibold text-white/80">
                     <span className="w-2 h-2 rounded-full bg-white/80 animate-pulse" />
-                    Loading insights
+                    {t("detail.loading")}
                   </span>
                 )}
               </div>
             </div>
           </div>
         </motion.section>
+
+        {/* The model is not downloaded yet: say where to start it (cached text still shows below). */}
+        {liveData?.code === "error.model_missing" && (
+          <div role="status" className="mt-6 p-4 rounded-2xl bg-warning-container text-on-surface flex items-start gap-3">
+            <Icon name="info" className="text-2xl shrink-0" />
+            <div className="min-w-0">
+              <p className="m-0 font-semibold">{t(llmErrorKey(liveData.code))}</p>
+              <details className="mt-1 text-sm">
+                <summary className="cursor-pointer">{t("action.details")}</summary>
+                <p className="mt-1 break-words">{liveData.error}</p>
+              </details>
+            </div>
+          </div>
+        )}
 
         {/* ── Quick Stats ── */}
         <div className="mt-6">
@@ -1280,18 +1263,12 @@ export default function ViewMorePage() {
             {activeData.isSubtheme ? (
               activeData.not_cached ? (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center">
-                  <span
-                    className="material-symbols-outlined text-amber-500 text-4xl mb-3 block"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    hourglass_empty
-                  </span>
+                  <Icon name="hourglass_empty" filled className="text-amber-500 text-4xl mb-3 block" />
                   <p className="text-sm font-bold text-amber-900">
-                    Subtheme insights not generated yet
+                    {t("detail.notCached.title")}
                   </p>
                   <p className="text-xs text-amber-700 mt-1">
-                    Go to the Pipeline tab and run{" "}
-                    <strong>Precompute Subthemes</strong> first.
+                    {t("detail.notCached.body")}
                   </p>
                 </div>
               ) : (
@@ -1333,12 +1310,10 @@ export default function ViewMorePage() {
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <div className="flex flex-col">
                     <h2 className="text-base md:text-lg font-bold font-headline text-on-surface">
-                      Retrieved Student Comments
+                      {t("detail.retrieved.title")}
                     </h2>
                     <p className="text-xs text-on-surface-variant/60 mt-0.5">
-                      {activeData.isSubtheme
-                        ? `Showing ${displayedComments.length} comments linked to this sub-theme`
-                        : `Showing ${displayedComments.length} comments from the anonymized survey database`}
+                      {t(activeData.isSubtheme ? "detail.retrieved.sub" : "detail.retrieved.main", { n: displayedComments.length })}
                     </p>
                   </div>
                   <span
@@ -1359,9 +1334,7 @@ export default function ViewMorePage() {
                   ))}
                 </div>
                 <p className="text-[10px] text-on-surface-variant/50 italic mt-4">
-                  * Verbatim quotes retrieved from vector database offline.
-                  Scroll vertically to view more. Expand cards to view long
-                  comments.
+                  {t("detail.retrieved.note")}
                 </p>
               </motion.div>
             )}
@@ -1375,8 +1348,8 @@ export default function ViewMorePage() {
                 rows={activeData.subtheme_mentions}
                 title={
                   activeData.isSubtheme
-                    ? "Sub-subtheme breakdown"
-                    : "Sub-theme mentions breakdown"
+                    ? t("detail.donut.sub")
+                    : t("detail.donut.main")
                 }
                 accentColor={colors.accent}
               />
@@ -1408,7 +1381,7 @@ export default function ViewMorePage() {
                     className="bg-surface-container-lowest rounded-2xl p-4 md:p-6 shadow-sm border border-outline-variant/10"
                   >
                     <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-4">
-                      Other Sub-themes
+                      {t("detail.other")}
                     </h3>
                     <div className="flex flex-col gap-2.5">
                       {theme.subtheme_mentions
@@ -1450,10 +1423,8 @@ export default function ViewMorePage() {
                     className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl text-white text-xs font-bold px-3 py-3 transition-all shadow-sm no-underline hover:opacity-90"
                     style={{ background: colors.gradient }}
                   >
-                    <span className="material-symbols-outlined text-base">
-                      dashboard
-                    </span>
-                    Back to dashboard
+                    <Icon name="dashboard" className="text-base" />
+                    {t("detail.backDashboard")}
                   </Link>
                   <button
                     onClick={() =>
@@ -1468,10 +1439,8 @@ export default function ViewMorePage() {
                     className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border text-xs font-bold px-3 py-3 transition-colors cursor-pointer hover:opacity-80 bg-transparent"
                     style={{ borderColor: colors.accent, color: colors.accent }}
                   >
-                    <span className="material-symbols-outlined text-base">
-                      arrow_upward
-                    </span>
-                    Back to Main Theme
+                    <Icon name="arrow_upward" className="text-base" />
+                    {t("detail.backTheme")}
                   </button>
                 </div>
               ) : (
@@ -1480,10 +1449,8 @@ export default function ViewMorePage() {
                   className="inline-flex items-center justify-center gap-2 w-full rounded-xl text-white text-sm font-bold px-4 py-3 transition-all shadow-sm no-underline hover:opacity-90"
                   style={{ background: colors.gradient }}
                 >
-                  <span className="material-symbols-outlined text-base">
-                    dashboard
-                  </span>
-                  Back to dashboard
+                  <Icon name="dashboard" className="text-base" />
+                  {t("detail.backDashboard")}
                 </Link>
               )}
             </div>

@@ -2,6 +2,9 @@ from importlib import import_module
 
 from flask import Blueprint, Response, jsonify, request
 
+from src.api.guards import busy_response
+from src.pipeline import jobs
+
 anonymize_bp = Blueprint("anonymize", __name__)
 service = import_module("src.pipeline.01_anonymization.service")
 _blocklist_mod = import_module("src.pipeline.01_anonymization.blocklist")
@@ -27,6 +30,8 @@ def anonymize():
             data.get("run_verification", True),
         )
         return Response(stream, mimetype="application/x-ndjson")
+    except jobs.JobBusy as exc:
+        return busy_response(exc)
     except FileNotFoundError as exc:
         return jsonify({"status": "error", "error": str(exc)}), 400
     except Exception as exc:
@@ -51,6 +56,8 @@ def run_anonymize_check():
             service.run_anonymize_check_stream(),
             mimetype="application/x-ndjson",
         )
+    except jobs.JobBusy as exc:
+        return busy_response(exc)
     except FileNotFoundError as exc:
         return jsonify({"status": "error", "error": str(exc)}), 400
     except Exception as exc:

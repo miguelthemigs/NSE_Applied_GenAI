@@ -4,10 +4,14 @@ import gc
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import json
+
+from src.pipeline.events import stream_event
+from src.pipeline import model_downloads
+from src.config.model_tiers import tier_for_model
 from importlib import import_module
 
 from src.config.settings import EMBEDDING_BATCH_SIZE, RERANKER_BATCH_SIZE
-from src.config.paths import CACHE_FILE, VECTOR_CHECKPOINT
+from src.config.paths import VECTOR_CHECKPOINT
 from src.config.response_quality import (
     LOW_INFORMATION_VALUE,
     RESPONSE_QUALITY_METADATA_KEY,
@@ -149,13 +153,7 @@ def _collection_metadata(
 
 
 def _invalidate_insight_cache() -> None:
-    if CACHE_FILE.exists():
-        CACHE_FILE.unlink()
-    try:
-        retrieval = import_module("src.pipeline.03_retrieval.service")
-        retrieval.clear_runtime_caches()
-    except Exception:
-        pass
+    import_module("src.pipeline.04_generation.cache").clear_insight_cache()
 
 
 def _validate_classified_collection(
@@ -244,12 +242,24 @@ def vector_db_is_ready(db_path: str) -> bool:
         embedding_model = metadata.get("embedding_model")
         if not embedding_model:
             return False
-        expected = _classification_for_embedding_model(embedding_model)
-        return all(
-            metadata.get(key) == value
-            for key, value in expected.collection_metadata(
-                status=CLASSIFICATION_STATUS_READY
-            ).items()
+        accepted = [_classification_for_embedding_model(embedding_model)]
+        # A completed rerank pass rewrites the classification keys with the
+        # reranker's config; the collection is still a ready vector DB.
+        reranker_model = metadata.get("theme_reranker_model")
+        if metadata.get("theme_reranker_status") == "ready" and reranker_model:
+            accepted.append(
+                _reranker_classification_for_embedding_model(
+                    embedding_model, reranker_model
+                )
+            )
+        return any(
+            all(
+                metadata.get(key) == value
+                for key, value in expected.collection_metadata(
+                    status=CLASSIFICATION_STATUS_READY
+                ).items()
+            )
+            for expected in accepted
         )
     except Exception:
         return False
@@ -408,20 +418,14 @@ def apply_theme_reranker_stream(
         collection_metadata = getattr(collection, "metadata", None) or {}
         embedding_model = collection_metadata.get("embedding_model")
         if not embedding_model:
-            yield json.dumps({
-                "status": "error",
-                "error": "Vector database is missing embedding model metadata.",
-            }) + "\n"
+            yield stream_event("error", code="error.backend", error="Vector database is missing embedding model metadata.")
             return
 
         selected_reranker = str(
             reranker_model_id or reranker_models.selected_reranker_model()
         ).strip()
         if not selected_reranker:
-            yield json.dumps({
-                "status": "error",
-                "error": "Reranker model id is required.",
-            }) + "\n"
+            yield stream_event("error", code="error.backend", error="Reranker model id is required.")
             return
 
         classification = _reranker_classification_for_embedding_model(
@@ -455,15 +459,8 @@ def apply_theme_reranker_stream(
         if max_documents is not None:
             rows = rows[: max(0, int(max_documents))]
 
-        yield json.dumps({
-            "status": "progress",
-            "message": (
-                f"Found {len(rows)} ambiguous responses to rerank with "
-                f"{selected_reranker}."
-            ),
-            "ambiguous_documents": len(rows),
-            "progress": 5,
-        }) + "\n"
+        yield stream_event("progress", stage="process", message=f"Found {len(rows)} ambiguous responses to rerank with "
+                f"{selected_reranker}.", progress=5, ambiguous_documents=len(rows))
 
         if not rows:
             collection.modify(
@@ -476,19 +473,17 @@ def apply_theme_reranker_stream(
                 }
             )
             _invalidate_insight_cache()
-            yield json.dumps({
-                "status": "success",
-                "message": "No ambiguous responses needed reranking.",
-                "reranked_documents": 0,
-                "progress": 100,
-            }) + "\n"
+            yield stream_event("success", message="No ambiguous responses needed reranking.", progress=100, reranked_documents=0)
             return
 
-        yield json.dumps({
-            "status": "progress",
-            "message": f"Loading reranker {selected_reranker}...",
-            "progress": 10,
-        }) + "\n"
+        if allow_model_download:
+            # Visible download first (spec D9); the reranker is not part of a tier.
+            downloaded = yield from model_downloads.download_events(
+                selected_reranker, None, allow_patterns=model_downloads.EMBEDDING_ALLOW_PATTERNS
+            )
+            if not downloaded:
+                return
+        yield stream_event("progress", stage="load", message=f"Loading reranker {selected_reranker}...", progress=10)
         reranker_model = reranker_models.load_reranker_model(
             selected_reranker,
             allow_download=allow_model_download,
@@ -570,14 +565,7 @@ def apply_theme_reranker_stream(
             collection.update(ids=update_ids, metadatas=updated_metadatas)
             processed += len(batch)
             progress = 10 + int(85 * (processed / len(rows)))
-            yield json.dumps({
-                "status": "progress",
-                "message": f"Reranked {processed}/{len(rows)} ambiguous responses...",
-                "progress": progress,
-                "reranked_documents": processed,
-                "changed_primary": changed_primary,
-                "low_information_reassigned": low_information_reassigned,
-            }) + "\n"
+            yield stream_event("progress", stage="process", message=f"Reranked {processed}/{len(rows)} ambiguous responses...", progress=progress, reranked_documents=processed, changed_primary=changed_primary, low_information_reassigned=low_information_reassigned)
 
         collection.modify(
             metadata={
@@ -589,18 +577,9 @@ def apply_theme_reranker_stream(
             }
         )
         _invalidate_insight_cache()
-        yield json.dumps({
-            "status": "success",
-            "message": "Theme reranking completed",
-            "reranker_model": selected_reranker,
-            "reranked_documents": processed,
-            "changed_primary": changed_primary,
-            "low_information_reassigned": low_information_reassigned,
-            "still_ambiguous": still_ambiguous,
-            "progress": 100,
-        }) + "\n"
+        yield stream_event("success", message="Theme reranking completed", progress=100, reranker_model=selected_reranker, reranked_documents=processed, changed_primary=changed_primary, low_information_reassigned=low_information_reassigned, still_ambiguous=still_ambiguous)
     except Exception as e:
-        yield json.dumps({"status": "error", "error": str(e)}) + "\n"
+        yield stream_event("error", code="error.backend", error=str(e))
     finally:
         reranker_model = None
         reranker_models.unload_reranker_models()
@@ -662,7 +641,6 @@ def build_vector_db(csv_path="data/anonymized_output.csv", db_path="./survey_vec
                 status=CLASSIFICATION_STATUS_BUILDING,
             ),
         )
-        _invalidate_insight_cache()
 
         for start in range(0, len(df_combined), BATCH_SIZE):
             end = min(start + BATCH_SIZE, len(df_combined))
@@ -707,6 +685,7 @@ def build_vector_db(csv_path="data/anonymized_output.csv", db_path="./survey_vec
                 include_hnsw_space=False,
             )
         )
+        _invalidate_insight_cache()
         low_information_count = sum(
             response_quality(answer) == LOW_INFORMATION_VALUE
             for answer in df_combined["answer"]
@@ -729,7 +708,7 @@ def build_vector_db_stream(
     allow_model_download=True,
 ):
     if not os.path.exists(csv_path):
-        yield json.dumps({"status": "error", "error": f"Input file {csv_path} not found. Please anonymize first."}) + "\n"
+        yield stream_event("error", code="error.no_data", error=f"Input file {csv_path} not found. Please anonymize first.")
         return
 
     model = None
@@ -741,24 +720,21 @@ def build_vector_db_stream(
         BATCH_SIZE = EMBEDDING_BATCH_SIZE
         if EMBEDDING_MODEL not in AVAILABLE_EMBEDDING_MODELS:
             supported = ", ".join(AVAILABLE_EMBEDDING_MODELS)
-            yield json.dumps({
-                "status": "error",
-                "error": f"Unsupported embedding model '{EMBEDDING_MODEL}'. Choose one of: {supported}.",
-            }) + "\n"
+            yield stream_event("error", code="error.model_missing", error=f"Unsupported embedding model '{EMBEDDING_MODEL}'. Choose one of: {supported}.")
             return
 
         # Load CSV
-        yield json.dumps({"status": "progress", "message": f"Loading CSV from {csv_path}...", "progress": 10}) + "\n"
+        yield stream_event("progress", stage="read", message=f"Loading CSV from {csv_path}...", progress=10)
         df = pd.read_csv(csv_path, sep=CSV_SEP, encoding='utf-8-sig')
 
         if selected_columns and len(selected_columns) > 0:
             ANSWER_COLS = [col for col in selected_columns if col in df.columns]
-            yield json.dumps({"status": "progress", "message": f"Using {len(ANSWER_COLS)} selected columns: {', '.join(ANSWER_COLS)}", "progress": 12}) + "\n"
+            yield stream_event("progress", stage="read", message=f"Using {len(ANSWER_COLS)} selected columns: {', '.join(ANSWER_COLS)}", progress=12)
         else:
             ANSWER_COLS = [col for col in df.columns if is_questionnaire_column(col)]
 
         if not ANSWER_COLS:
-            yield json.dumps({"status": "error", "error": "No matching columns found in the dataset."}) + "\n"
+            yield stream_event("error", code="error.no_data", error="No matching columns found in the dataset.")
             return
 
         all_records = []
@@ -770,7 +746,7 @@ def build_vector_db_stream(
                 all_records.append(temp_df)
 
         if not all_records:
-            yield json.dumps({"status": "error", "error": "No matching answer columns found in the dataset."}) + "\n"
+            yield stream_event("error", code="error.no_data", error="No matching answer columns found in the dataset.")
             return
 
         df_combined = pd.concat(all_records, ignore_index=True)
@@ -787,14 +763,18 @@ def build_vector_db_stream(
         is_resuming = resume_from > 0
 
         if is_resuming:
-            yield json.dumps({
-                "status": "progress",
-                "message": f"Resuming from checkpoint — {resume_from}/{total_docs} documents already indexed...",
-                "progress": 15,
-            }) + "\n"
+            yield stream_event("progress", stage="read", message=f"Resuming from checkpoint — {resume_from}/{total_docs} documents already indexed...", progress=15)
 
-        # Load/validate the model before touching ChromaDB.
-        yield json.dumps({"status": "progress", "message": f"Loading {EMBEDDING_MODEL} embedding model via {describe_embedding_runtime(EMBEDDING_MODEL)}...", "progress": 25}) + "\n"
+        # Load/validate the model before touching ChromaDB; download it visibly first (spec D9).
+        if allow_model_download:
+            downloaded = yield from model_downloads.download_events(
+                EMBEDDING_MODEL,
+                tier_for_model("vectors", EMBEDDING_MODEL),
+                allow_patterns=model_downloads.EMBEDDING_ALLOW_PATTERNS,
+            )
+            if not downloaded:
+                return
+        yield stream_event("progress", stage="load", message=f"Loading {EMBEDDING_MODEL} embedding model via {describe_embedding_runtime(EMBEDDING_MODEL)}...", progress=25)
         try:
             model = load_embedding_model(EMBEDDING_MODEL, allow_download=allow_model_download)
         except Exception as e:
@@ -803,31 +783,19 @@ def build_vector_db_stream(
                 if not allow_model_download
                 else " Check your internet connection, HF_TOKEN, or model name."
             )
-            yield json.dumps({"status": "error", "error": f"Embedding model could not be loaded: {e}.{download_hint}"}) + "\n"
+            yield stream_event("error", code="error.download_failed" if allow_model_download else "error.model_missing", error=f"Embedding model could not be loaded: {e}.{download_hint}")
             return
 
-        yield json.dumps({
-            "status": "progress",
-            "message": (
-                "Embedding-only theme assignment enabled; reranker can be run "
-                "after vector indexing."
-            ),
-            "progress": 27,
-        }) + "\n"
+        yield stream_event("progress", stage="process", message="Embedding-only theme assignment enabled; reranker can be run "
+                "after vector indexing.", progress=27)
 
-        yield json.dumps({
-            "status": "progress",
-            "message": (
-                f"Embedding {len(THEME_EMBEDDING_DEFINITIONS)} theme definitions; "
+        yield stream_event("progress", stage="process", message=f"Embedding {len(THEME_EMBEDDING_DEFINITIONS)} theme definitions; "
                 f"top {classification.candidate_count} candidates per response "
                 f"will be stored. Rows with top-two margin <= "
-                f"{classification.ambiguity_score_margin:g} stay ambiguous."
-            ),
-            "progress": 29,
-        }) + "\n"
+                f"{classification.ambiguity_score_margin:g} stay ambiguous.", progress=29)
         theme_names, theme_embeddings = encode_theme_definitions(model)
 
-        yield json.dumps({"status": "progress", "message": "Connecting to ChromaDB...", "progress": 30}) + "\n"
+        yield stream_event("progress", stage="save", message="Connecting to ChromaDB...", progress=30)
         client = chromadb.PersistentClient(path=str(db_path))
 
         if is_resuming:
@@ -853,9 +821,8 @@ def build_vector_db_stream(
                     status=CLASSIFICATION_STATUS_BUILDING,
                 ),
             )
-            _invalidate_insight_cache()
 
-        yield json.dumps({"status": "progress", "message": f"Found {total_docs} documents to embed and classify. Starting batched indexing...", "progress": 40}) + "\n"
+        yield stream_event("progress", stage="process", message=f"Found {total_docs} documents to embed and classify. Starting batched indexing...", progress=40)
 
         stat = os.stat(csv_path)
         checkpoint_meta = {
@@ -915,19 +882,9 @@ def build_vector_db_stream(
             _release_unused_torch_memory()
 
             progress = 40 + int(55 * (processed_count / total_docs))
-            yield json.dumps({
-                "status": "progress",
-                "message": f"Embedded, classified, and indexed {processed_count}/{total_docs} documents...",
-                "progress": progress,
-                "current_doc": current_doc,
-                "checkpoint_saved": True,
-            }) + "\n"
+            yield stream_event("progress", stage="process", message=f"Embedded, classified, and indexed {processed_count}/{total_docs} documents...", progress=progress, current_doc=current_doc, checkpoint_saved=True)
 
-        yield json.dumps({
-            "status": "progress",
-            "message": "Validating persisted theme assignments before marking the database ready...",
-            "progress": 96,
-        }) + "\n"
+        yield stream_event("progress", stage="save", message="Validating persisted theme assignments before marking the database ready...", progress=96)
         _validate_classified_collection(
             collection,
             expected_count=total_docs,
@@ -941,28 +898,17 @@ def build_vector_db_stream(
                 include_hnsw_space=False,
             )
         )
+        _invalidate_insight_cache()
         _clear_vector_checkpoint()
 
         low_information_count = sum(
             response_quality(answer) == LOW_INFORMATION_VALUE
             for answer in df_combined["answer"]
         )
-        yield json.dumps({
-            "status": "success",
-            "message": "Vector DB built successfully",
-            "document_count": total_docs,
-            "vectors_created": total_docs,
-            "theme_classification_version": classification.classification_version,
-            "theme_candidate_count": classification.candidate_count,
-            "theme_reranker_model": classification.reranker_model_id,
-            "theme_reranker_status": "not_run",
-            "theme_ambiguity_score_margin": classification.ambiguity_score_margin,
-            "low_information_responses": low_information_count,
-            "progress": 100
-        }) + "\n"
+        yield stream_event("success", message="Vector DB built successfully", progress=100, document_count=total_docs, vectors_created=total_docs, theme_classification_version=classification.classification_version, theme_candidate_count=classification.candidate_count, theme_reranker_model=classification.reranker_model_id, theme_reranker_status="not_run", theme_ambiguity_score_margin=classification.ambiguity_score_margin, low_information_responses=low_information_count)
 
     except Exception as e:
-        yield json.dumps({"status": "error", "error": str(e)}) + "\n"
+        yield stream_event("error", code="error.backend", error=str(e))
     finally:
         if model is not None:
             model = None
