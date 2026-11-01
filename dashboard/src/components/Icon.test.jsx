@@ -16,6 +16,13 @@ describe('Icon', () => {
     expect(el).not.toHaveAttribute('aria-hidden')
   })
 
+  it('is excluded from browser page translation', () => {
+    const { container } = render(<Icon name="lock" />)
+    const el = container.querySelector('.material-symbols-outlined')
+    expect(el).toHaveAttribute('translate', 'no')
+    expect(el).toHaveClass('notranslate')
+  })
+
   it('applies FILL when filled', () => {
     const { container } = render(<Icon name="insights" filled className="x" />)
     const el = container.querySelector('.material-symbols-outlined')

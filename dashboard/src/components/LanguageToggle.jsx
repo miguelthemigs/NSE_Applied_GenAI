@@ -10,7 +10,8 @@ const LANGS = [
 export default function LanguageToggle() {
   const { lang, setLang, t } = useI18n()
   return (
-    <div role="group" aria-label={t('lang.toggle')} className="flex items-center gap-2">
+    // translate="no": "en" is Dutch for "and", so browser page translation would relabel EN as "AND".
+    <div role="group" aria-label={t('lang.toggle')} translate="no" className="notranslate flex items-center gap-2">
       <Icon name="translate" className="max-sm:hidden text-[18px] text-primary-fixed" />
       <div className="flex rounded-[10px] bg-primary-container p-[3px]">
         {LANGS.map(({ code, label }) => {

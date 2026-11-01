@@ -58,6 +58,13 @@ describe('i18n', () => {
     expect(screen.getByRole('button', { name: 'NL' })).toHaveAttribute('aria-pressed', 'false')
   })
 
+  it('toggle labels are excluded from browser page translation ("EN" is Dutch for "and")', () => {
+    wrap(<LanguageToggle />)
+    const group = screen.getByRole('group')
+    expect(group).toHaveAttribute('translate', 'no')
+    expect(group).toHaveClass('notranslate')
+  })
+
   it('restores a stored language', () => {
     localStorage.setItem('nse.lang', 'en')
     wrap(<Probe />)
