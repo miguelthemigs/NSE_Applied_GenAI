@@ -390,6 +390,87 @@ class ThemeClassificationTests(unittest.TestCase):
                 )
             )
 
+    def test_rerank_pass_keeps_unsure_answers_in_their_theme_shortlist(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            db_path = root / "vectors"
+            config = theme_classifier.embedding_classification_config("fake-model")
+            collection = chromadb.PersistentClient(path=str(db_path)).create_collection(
+                "survey_responses",
+                metadata={
+                    "embedding_model": "fake-model",
+                    **config.collection_metadata(
+                        status=theme_classifier.CLASSIFICATION_STATUS_READY
+                    ),
+                },
+            )
+            shortlist = ["Teachers", "Support / Mentoring", "Content and Organisation"]
+            metadata = {
+                "theme_primary": "Teachers",
+                "theme_ambiguous": True,
+                "theme_candidate_count": len(shortlist),
+            }
+            for position, theme in enumerate(shortlist, start=1):
+                prefix = f"theme_candidate_{position}"
+                metadata[prefix] = theme
+                metadata[f"{prefix}_embedding_similarity"] = 0.5 - position * 0.01
+                metadata[f"{prefix}_embedding_distance"] = 0.5 + position * 0.01
+                metadata[f"{prefix}_embedding_rank"] = position
+            collection.add(
+                ids=["doc_0"],
+                documents=[
+                    "Dit was echt onduidelijk en ik wist niet wat er van me verwacht werd."
+                ],
+                metadatas=[metadata],
+                embeddings=[[1.0, 0.0]],
+            )
+            # A vague but real answer that would score highest against a
+            # "no meaningful response" description if one were offered.
+            reranker = ThemeScoreReranker(
+                {
+                    "No Meaningful Response": 50.0,
+                    "Support / Mentoring": 2.0,
+                    "Teachers": 1.0,
+                    "Content and Organisation": 0.5,
+                }
+            )
+            with (
+                mock.patch.object(
+                    vector_builder.reranker_models,
+                    "load_reranker_model",
+                    return_value=reranker,
+                ),
+                mock.patch.object(vector_builder.reranker_models, "unload_reranker_models"),
+                mock.patch.object(
+                    import_module("src.pipeline.04_generation.cache"),
+                    "CACHE_FILE",
+                    root / "gemma_cache.json",
+                ),
+            ):
+                events = [
+                    json.loads(line)
+                    for line in vector_builder.apply_theme_reranker_stream(
+                        db_path=str(db_path),
+                        reranker_model_id="fake-reranker",
+                        allow_model_download=False,
+                    )
+                ]
+
+            self.assertEqual(events[-1]["status"], "success", events)
+            self.assertEqual(events[-1]["low_information_reassigned"], 0)
+            scored_themes = {
+                str(query).split(".", 1)[0] for query, _document in reranker.calls[0]
+            }
+            self.assertEqual(scored_themes, set(shortlist))
+            stored = (
+                chromadb.PersistentClient(path=str(db_path))
+                .get_collection("survey_responses")
+                .get(include=["metadatas"])["metadatas"][0]
+            )
+            self.assertEqual(stored["theme_primary"], "Support / Mentoring")
+            self.assertEqual(stored["theme_candidate_count"], len(shortlist))
+            self.assertIs(stored["theme_ambiguous"], False)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -343,46 +343,19 @@ def _metadata_with_ranked_candidates(
         metadata.get("theme_score_margin"),
     )
 
-    primary = ranked_candidates[0]
-    if primary["theme"] == LOW_INFORMATION_THEME:
-        updated.update(
-            {
-                "theme_primary": LOW_INFORMATION_THEME,
-                "theme_primary_score": float(primary["score"]),
-                "theme_primary_score_kind": classification.score_kind,
-                "theme_ambiguous": False,
-                "theme_score_margin": 1.0,
-                "theme_candidate_count": 1,
-                "theme_classification_method": classification.method,
-                "theme_reranker_model": classification.reranker_model_id,
-                "theme_ambiguity_score_margin": classification.ambiguity_score_margin,
-                "theme_candidate_1": LOW_INFORMATION_THEME,
-                "theme_candidate_1_score": float(primary["score"]),
-                "theme_candidate_1_embedding_similarity": 0.0,
-                "theme_candidate_1_embedding_distance": 1.0,
-                "theme_candidate_1_embedding_rank": 0,
-            }
-        )
-        return updated
-
-    theme_candidates = [
-        candidate
-        for candidate in ranked_candidates
-        if candidate["theme"] != LOW_INFORMATION_THEME
-    ]
     margin = (
-        float(theme_candidates[0]["score"] - theme_candidates[1]["score"])
-        if len(theme_candidates) > 1
+        float(ranked_candidates[0]["score"] - ranked_candidates[1]["score"])
+        if len(ranked_candidates) > 1
         else 1.0
     )
     updated.update(
         {
-            "theme_primary": theme_candidates[0]["theme"],
-            "theme_primary_score": float(theme_candidates[0]["score"]),
+            "theme_primary": ranked_candidates[0]["theme"],
+            "theme_primary_score": float(ranked_candidates[0]["score"]),
             "theme_primary_score_kind": classification.score_kind,
             "theme_ambiguous": False,
             "theme_score_margin": margin,
-            "theme_candidate_count": len(theme_candidates),
+            "theme_candidate_count": len(ranked_candidates),
             "theme_classification_method": classification.method,
             "theme_reranker_model": classification.reranker_model_id,
             "theme_classification_version": classification.classification_version,
@@ -390,7 +363,7 @@ def _metadata_with_ranked_candidates(
             "theme_ambiguity_score_margin": classification.ambiguity_score_margin,
         }
     )
-    for position, candidate in enumerate(theme_candidates, start=1):
+    for position, candidate in enumerate(ranked_candidates, start=1):
         prefix = f"theme_candidate_{position}"
         updated[prefix] = candidate["theme"]
         updated[f"{prefix}_score"] = float(candidate["score"])
@@ -491,24 +464,16 @@ def apply_theme_reranker_stream(
 
         batch_size = 32
         changed_primary = 0
-        low_information_reassigned = 0
         still_ambiguous = 0
         processed = 0
         for start in range(0, len(rows), batch_size):
             batch = rows[start : start + batch_size]
             pairs = []
             for row in batch:
-                row_candidates = [
-                    *row["candidates"],
-                    {
-                        "theme": LOW_INFORMATION_THEME,
-                        "embedding_similarity": 0.0,
-                        "embedding_distance": 1.0,
-                        "embedding_rank": 0,
-                    },
-                ]
-                row["reranker_candidates"] = row_candidates
-                for candidate in row_candidates:
+                # Only the answer's own theme shortlist competes. Sending an
+                # answer to No Meaningful Response stays with the
+                # response-quality rule at build time.
+                for candidate in row["candidates"]:
                     pairs.append(
                         (
                             theme_definition_text(candidate["theme"]),
@@ -532,7 +497,7 @@ def apply_theme_reranker_stream(
             update_ids = []
             for row in batch:
                 candidates = []
-                for candidate in row["reranker_candidates"]:
+                for candidate in row["candidates"]:
                     candidates.append(
                         {
                             **candidate,
@@ -555,8 +520,6 @@ def apply_theme_reranker_stream(
                 )
                 if updated.get("theme_primary") != row["metadata"].get("theme_primary"):
                     changed_primary += 1
-                if updated.get("theme_primary") == LOW_INFORMATION_THEME:
-                    low_information_reassigned += 1
                 if updated.get("theme_ambiguous"):
                     still_ambiguous += 1
                 update_ids.append(row["id"])
@@ -565,7 +528,7 @@ def apply_theme_reranker_stream(
             collection.update(ids=update_ids, metadatas=updated_metadatas)
             processed += len(batch)
             progress = 10 + int(85 * (processed / len(rows)))
-            yield stream_event("progress", stage="process", message=f"Reranked {processed}/{len(rows)} ambiguous responses...", progress=progress, reranked_documents=processed, changed_primary=changed_primary, low_information_reassigned=low_information_reassigned)
+            yield stream_event("progress", stage="process", message=f"Reranked {processed}/{len(rows)} ambiguous responses...", progress=progress, reranked_documents=processed, changed_primary=changed_primary)
 
         collection.modify(
             metadata={
@@ -577,7 +540,9 @@ def apply_theme_reranker_stream(
             }
         )
         _invalidate_insight_cache()
-        yield stream_event("success", message="Theme reranking completed", progress=100, reranker_model=selected_reranker, reranked_documents=processed, changed_primary=changed_primary, low_information_reassigned=low_information_reassigned, still_ambiguous=still_ambiguous)
+        # The reranker no longer moves answers to No Meaningful Response; the
+        # count stays in the event because the rerank done card shows it.
+        yield stream_event("success", message="Theme reranking completed", progress=100, reranker_model=selected_reranker, reranked_documents=processed, changed_primary=changed_primary, low_information_reassigned=0, still_ambiguous=still_ambiguous)
     except Exception as e:
         yield stream_event("error", code="error.backend", error=str(e))
     finally:

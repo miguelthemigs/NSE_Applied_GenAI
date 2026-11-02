@@ -24,12 +24,6 @@ CLASSIFICATION_STATUS_BUILDING = "building"
 CLASSIFICATION_STATUS_READY = "ready"
 RERANKER_DISABLED_ID = "disabled"
 MAX_THEME_CANDIDATES = len(THEME_EMBEDDING_DEFINITIONS)
-LOW_INFORMATION_RERANKER_DEFINITION = (
-    f"{LOW_INFORMATION_THEME}. Responses with no usable thematic feedback, "
-    "including empty answers, no comment, none, n/a, weet ik niet, geen "
-    "opmerkingen, irrelevant filler, or answers too vague to assign to an "
-    "educational feedback theme."
-)
 
 
 @dataclass(frozen=True)
@@ -114,8 +108,6 @@ def embedding_classification_config(
 
 
 def theme_definition_text(theme_name: str) -> str:
-    if theme_name == LOW_INFORMATION_THEME:
-        return LOW_INFORMATION_RERANKER_DEFINITION
     definition = THEME_EMBEDDING_DEFINITIONS[theme_name]
     return f"{theme_name}. {definition}"
 

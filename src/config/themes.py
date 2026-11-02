@@ -1,6 +1,6 @@
 LOW_INFORMATION_THEME = "No Meaningful Response"
 THEME_TAXONOMY_VERSION = 1
-THEME_CLASSIFICATION_VERSION = 1
+THEME_CLASSIFICATION_VERSION = 2
 
 THEME_RETRIEVAL_PROMPT = (
     "Instruct: Given an educational feedback category, retrieve Dutch, English, "
